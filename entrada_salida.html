@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1e272e">
-<title>ContaNexus — Cuentas por Cobrar</title>
+<title>ContaNexus — Entrada y Salida de Inventario</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -34,31 +34,20 @@ body { font-family: 'IBM Plex Sans', sans-serif; display: flex; background: #f0f
 
 .contenido { padding: 14px; flex: 1; }
 
-/* ALERTAS */
-.alertas-wrap { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
-.alerta { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 12px; font-size: 13px; font-weight: 600; box-shadow: 0 2px 10px rgba(0,0,0,0.06); animation: slideIn 0.35s ease; }
-@keyframes slideIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-.alerta-icon { font-size: 18px; flex-shrink: 0; }
-.alerta.vencido { background: #fde8e8; color: #b71c1c; border: 1.5px solid #f5b7b1; }
-.alerta.porvencer { background: #fff3e0; color: #b9650a; border: 1.5px solid #ffd9a0; }
-.alerta-detalle { font-weight: 400; font-size: 12px; opacity: 0.85; margin-top: 2px; }
-.alerta-cerrar { margin-left: auto; background: none; border: none; cursor: pointer; font-size: 18px; color: inherit; opacity: 0.6; padding: 2px 6px; flex-shrink: 0; }
-.alerta-cerrar:hover { opacity: 1; }
-
 /* STATS RESUMEN */
 .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
 .stat { background: white; border-radius: 12px; padding: 13px 14px; box-shadow: 0 2px 12px rgba(0,0,0,0.07); border-top: 3px solid #ddd; cursor: pointer; transition: transform 0.15s; min-width: 0; }
 .stat:hover { transform: translateY(-2px); }
-.stat.total     { border-top-color: #3c6fe4; }
-.stat.pendiente { border-top-color: #00b894; }
-.stat.porvencer { border-top-color: #f39c12; }
-.stat.vencido   { border-top-color: #e74c3c; }
+.stat.total   { border-top-color: #3c6fe4; }
+.stat.entrada { border-top-color: #00b894; }
+.stat.salida  { border-top-color: #ff3f34; }
+.stat.monto   { border-top-color: #f39c12; }
 .stat-label { font-size: 10px; color: #8395a7; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 4px; line-height: 1.3; }
 .stat-val { font-family: 'IBM Plex Mono', monospace; font-size: 20px; font-weight: 700; color: #1e272e; }
-.stat.total .stat-val     { color: #3c6fe4; }
-.stat.pendiente .stat-val { color: #00b894; }
-.stat.porvencer .stat-val { color: #f39c12; }
-.stat.vencido .stat-val   { color: #e74c3c; }
+.stat.total .stat-val   { color: #3c6fe4; }
+.stat.entrada .stat-val { color: #00b894; }
+.stat.salida .stat-val  { color: #ff3f34; }
+.stat.monto .stat-val   { color: #f39c12; }
 
 /* CARD */
 .card { background: white; border-radius: 14px; padding: 16px 14px; box-shadow: 0 2px 14px rgba(0,0,0,0.07); margin-bottom: 16px; }
@@ -73,6 +62,9 @@ body { font-family: 'IBM Plex Sans', sans-serif; display: flex; background: #f0f
 .search-box input { width: 100%; padding: 12px 14px 12px 36px; border: 1.5px solid #dfe6e9; border-radius: 8px; font-family: 'IBM Plex Sans', sans-serif; font-size: 16px; outline: none; background: white; }
 .search-box input:focus { border-color: #ff3f34; }
 .search-box .ico { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #b2bec3; font-size: 14px; }
+.fecha-box { flex: 1 1 100%; min-width: 0; }
+.fecha-box input { width: 100%; padding: 11px 14px; border: 1.5px solid #dfe6e9; border-radius: 8px; font-family: 'IBM Plex Sans', sans-serif; font-size: 15px; outline: none; background: white; color: #2d3436; }
+.fecha-box input:focus { border-color: #ff3f34; }
 .filtro-btns { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; }
 .filtro-btn { padding: 9px 14px; border: 1.5px solid #dfe6e9; background: white; border-radius: 20px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: #636e72; transition: all 0.15s; flex: 1 1 auto; white-space: nowrap; }
 .filtro-btn.active { background: #1e272e; color: white; border-color: #1e272e; }
@@ -82,6 +74,8 @@ body { font-family: 'IBM Plex Sans', sans-serif; display: flex; background: #f0f
 .btn-primary:hover { background: #c0392b; }
 .btn-dark { background: #2d3436; color: white; }
 .btn-dark:hover { background: #1e272e; }
+.btn-limpiar { background: #dfe6e9; color: #636e72; }
+.btn-limpiar:hover { background: #b2bec3; }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* TABLA */
@@ -95,23 +89,18 @@ tr:hover td { background: #fafbfc; }
 .fw7 { font-weight: 700; }
 .text-right { text-align: right; }
 .text-center { text-align: center; }
-.fila-vencido td { background: #fff7f7; }
-.fila-porvencer td { background: #fffaf3; }
+.fila-entrada td { background: #f6fdfa; }
+.fila-salida td { background: #fff7f7; }
 
 .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; white-space: nowrap; }
-.badge-pendiente { background: #d4f5e9; color: #00695c; }
-.badge-porvencer { background: #fff3e0; color: #b9650a; }
-.badge-vencido   { background: #fde8e8; color: #b71c1c; }
-.badge-pagado    { background: #e8eef8; color: #3c6fe4; }
+.badge-entrada { background: #d4f5e9; color: #00695c; }
+.badge-salida  { background: #fde8e8; color: #b71c1c; }
 
-.monto-val { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 14px; }
-.monto-val.pendiente { color: #00695c; }
-.monto-val.porvencer { color: #b9650a; }
-.monto-val.vencido   { color: #b71c1c; }
-.monto-val.pagado    { color: #3c6fe4; text-decoration: line-through; opacity: 0.7; }
+.cant-val { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 14px; }
+.cant-val.entrada { color: #00695c; }
+.cant-val.salida  { color: #b71c1c; }
 
 .btn-accion { background: none; border: 1.5px solid #dfe6e9; color: #636e72; border-radius: 7px; padding: 6px 11px; cursor: pointer; font-size: 12.5px; font-weight: 600; transition: all 0.2s; white-space: nowrap; }
-.btn-accion.pagar:hover { border-color: #00b894; color: #00b894; background: #e6faf3; }
 .btn-accion.borrar:hover { border-color: #e74c3c; color: #e74c3c; background: #fde8e8; }
 .btn-accion:disabled { opacity: 0.5; cursor: not-allowed; }
 .acciones-fila { display: flex; gap: 6px; }
@@ -144,22 +133,21 @@ tr:hover td { background: #fafbfc; }
 
 /* ===== MOBILE: table becomes a stack of cards ===== */
 @media (max-width: 768px) {
-  table.tabla-deudores thead { display: none; }
-  table.tabla-deudores, table.tabla-deudores tbody, table.tabla-deudores tr, table.tabla-deudores td { display: block; width: 100%; }
-  table.tabla-deudores tr { border: 1px solid #eef0f2; border-radius: 10px; margin-bottom: 10px; padding: 4px 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
-  table.tabla-deudores tr:hover td { background: transparent; }
-  table.tabla-deudores td { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f5f6f8; text-align: right; }
-  table.tabla-deudores td:last-child { border-bottom: none; }
-  table.tabla-deudores td[data-label]::before { content: attr(data-label); font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 700; color: #b2bec3; text-transform: uppercase; letter-spacing: 0.4px; text-align: left; }
-  table.tabla-deudores td[data-label="Cliente"] { padding-top: 12px; }
-  table.tabla-deudores td[data-label="Cliente"]::before { content: "🧑"; }
-  table.tabla-deudores td[data-label="Acciones"] { justify-content: flex-start; }
+  table.tabla-mov thead { display: none; }
+  table.tabla-mov, table.tabla-mov tbody, table.tabla-mov tr, table.tabla-mov td { display: block; width: 100%; }
+  table.tabla-mov tr { border: 1px solid #eef0f2; border-radius: 10px; margin-bottom: 10px; padding: 4px 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+  table.tabla-mov tr:hover td { background: transparent; }
+  table.tabla-mov td { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f5f6f8; text-align: right; }
+  table.tabla-mov td:last-child { border-bottom: none; }
+  table.tabla-mov td[data-label]::before { content: attr(data-label); font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 700; color: #b2bec3; text-transform: uppercase; letter-spacing: 0.4px; text-align: left; }
+  table.tabla-mov td[data-label="Producto"] { padding-top: 12px; }
+  table.tabla-mov td[data-label="Acciones"] { justify-content: flex-start; }
   .acciones-fila { width: 100%; }
   .acciones-fila .btn-accion { flex: 1; padding: 10px; }
   .toast { left: 16px; right: 16px; bottom: 20px; text-align: center; }
 }
 
-/* ===== TABLET / DESKTOP: restore static sidebar and original spacing ===== */
+/* ===== TABLET / DESKTOP ===== */
 @media (min-width: 769px) {
   .hamburger, .sidebar-close, .sidebar-overlay { display: none !important; }
   .sidebar { position: sticky; top: 0; transform: none; width: 220px; max-width: none; height: auto; }
@@ -169,9 +157,6 @@ tr:hover td { background: #fafbfc; }
   .header-title { font-size: 18px; }
   .header-sub { font-size: 12px; }
   .fecha-sistema { font-size: 12px; width: auto; order: 0; }
-  .alertas-wrap { margin-bottom: 20px; }
-  .alerta { padding: 14px 18px; font-size: 14px; }
-  .alerta-detalle { font-size: 12.5px; }
   .stats { grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
   .stat { padding: 18px 20px; }
   .stat-label { font-size: 11px; }
@@ -181,15 +166,17 @@ tr:hover td { background: #fafbfc; }
   .card-title > div { width: auto; }
   .card-title > div .btn { flex: none; }
   .controles { gap: 10px; margin-bottom: 16px; }
-  .search-box { flex: 1; min-width: 220px; }
+  .search-box { flex: 1.4; min-width: 220px; }
+  .fecha-box { flex: none; min-width: 170px; }
   .search-box input { padding: 10px 14px 10px 36px; font-size: 14px; }
+  .fecha-box input { padding: 10px 14px; font-size: 14px; }
   .filtro-btns { width: auto; }
   .filtro-btn { flex: none; border-radius: 8px; font-size: 13px; padding: 9px 16px; }
   .btn { width: auto; min-height: auto; }
 }
 
 @media print {
-  .sidebar, .controles, .btn, .toast, .alertas-wrap, .stats, .alerta-cerrar, .acciones-fila { display: none !important; }
+  .sidebar, .controles, .btn, .toast, .stats, .acciones-fila { display: none !important; }
   body { display: block; }
   .main { width: 100%; }
   .contenido { padding: 0; }
@@ -205,74 +192,73 @@ tr:hover td { background: #fafbfc; }
   <div class="sidebar-brand">ContaNexus</div>
   <div class="sidebar-sub">Control de Inventario</div>
   <a href="index.html" class="nav-link">📅 Historial de Caja</a>
-  <a href="entrada_salida.html" class="nav-link">🔄 Movimientos Inventario</a>
+  <a href="entrada_salida.html" class="nav-link active">🔄 Movimientos Inventario</a>
   <a href="bodega.html" class="nav-link">📦 Bodega</a>
   <a href="vencimientos.html" class="nav-link">⏳ Vencimientos</a>
-  <a href="cuentas_cobrar.html" class="nav-link active">💸 Cuentas por Cobrar</a>
+  <a href="cuentas_cobrar.html" class="nav-link">💸 Cuentas por Cobrar</a>
 </div>
 
 <div class="main">
   <div class="header">
     <button class="hamburger" onclick="abrirMenu()" aria-label="Abrir menú">☰</button>
-    <div class="header-icon">💸</div>
+    <div class="header-icon">🔄</div>
     <div>
-      <div class="header-title">CUENTAS POR COBRAR</div>
-      <div class="header-sub">Clientes con saldo pendiente</div>
+      <div class="header-title">ENTRADA Y SALIDA DE INVENTARIO</div>
+      <div class="header-sub">Movimientos de producto con fecha, hora y cliente</div>
     </div>
     <div class="fecha-sistema" id="txt-fecha"></div>
   </div>
 
   <div class="contenido">
 
-    <!-- ALERTAS -->
-    <div class="alertas-wrap" id="alertas-wrap"></div>
-
     <!-- STATS -->
     <div class="stats">
       <div class="stat total" onclick="aplicarFiltro('todos')">
-        <div class="stat-label">🧑 Total Deudores</div>
+        <div class="stat-label">📦 Total Movimientos</div>
         <div class="stat-val" id="st-total">0</div>
       </div>
-      <div class="stat pendiente" onclick="aplicarFiltro('pendiente')">
-        <div class="stat-label">💰 Por Cobrar</div>
+      <div class="stat entrada" onclick="aplicarFiltro('entrada')">
+        <div class="stat-label">⬇️ Entradas</div>
+        <div class="stat-val" id="st-entradas">0</div>
+      </div>
+      <div class="stat salida" onclick="aplicarFiltro('salida')">
+        <div class="stat-label">⬆️ Salidas</div>
+        <div class="stat-val" id="st-salidas">0</div>
+      </div>
+      <div class="stat monto">
+        <div class="stat-label">💰 Total Vendido (salidas)</div>
         <div class="stat-val" id="st-monto">$0.00</div>
-      </div>
-      <div class="stat porvencer" onclick="aplicarFiltro('porvencer')">
-        <div class="stat-label">⏳ Por Vencer</div>
-        <div class="stat-val" id="st-porvencer">0</div>
-      </div>
-      <div class="stat vencido" onclick="aplicarFiltro('vencido')">
-        <div class="stat-label">🚫 Vencidos</div>
-        <div class="stat-val" id="st-vencido">0</div>
       </div>
     </div>
 
-    <!-- TABLA DEUDORES -->
+    <!-- TABLA MOVIMIENTOS -->
     <div class="card">
       <div class="card-title">
-        <span class="t">📋 Listado de Deudores</span>
+        <span class="t">📋 Movimientos de Inventario</span>
         <div style="display:flex; gap:8px;">
-          <button class="btn btn-dark" style="font-size:13px; padding:7px 14px;" onclick="cargarDeudores()">⟳ Actualizar</button>
-          <button class="btn btn-primary" style="font-size:13px; padding:7px 14px;" onclick="imprimirDeudores()">🖨️ Imprimir</button>
+          <button class="btn btn-dark" style="font-size:13px; padding:7px 14px;" onclick="cargarMovimientos()">⟳ Actualizar</button>
+          <button class="btn btn-primary" style="font-size:13px; padding:7px 14px;" onclick="imprimirMovimientos()">🖨️ Imprimir</button>
         </div>
       </div>
 
       <div class="controles">
         <div class="search-box">
           <span class="ico">🔍</span>
-          <input type="text" id="buscar" placeholder="Buscar por cliente o teléfono..." oninput="renderTabla()">
+          <input type="text" id="buscar" placeholder="Buscar por producto o cliente..." oninput="renderTabla()">
+        </div>
+        <div class="fecha-box">
+          <input type="date" id="filtroFecha" onchange="renderTabla()">
         </div>
         <div class="filtro-btns" id="chips-filtro">
           <button class="filtro-btn active" data-f="todos" onclick="aplicarFiltro('todos')">Todos</button>
-          <button class="filtro-btn" data-f="pendiente" onclick="aplicarFiltro('pendiente')">🟢 Al día</button>
-          <button class="filtro-btn" data-f="porvencer" onclick="aplicarFiltro('porvencer')">⏳ Por vencer</button>
-          <button class="filtro-btn" data-f="vencido" onclick="aplicarFiltro('vencido')">🚫 Vencidos</button>
-          <button class="filtro-btn" data-f="pagado" onclick="aplicarFiltro('pagado')">✅ Pagados</button>
+          <button class="filtro-btn" data-f="entrada" onclick="aplicarFiltro('entrada')">⬇️ Entradas</button>
+          <button class="filtro-btn" data-f="salida" onclick="aplicarFiltro('salida')">⬆️ Salidas</button>
         </div>
+        <button class="btn btn-limpiar" style="font-size:13px; padding:9px 16px;" onclick="limpiarFiltros()">✕ Limpiar filtros</button>
       </div>
 
       <div id="tabla-contenedor">
-        <div class="spinner-wrap"><div class="spinner"></div><br>Cargando deudores...</div>
+        <div class="spinner-wrap"><div class="spinner"></div><br>Cargando movimientos...</div>
       </div>
     </div>
 
@@ -282,8 +268,8 @@ tr:hover td { background: #fafbfc; }
 <div class="modal-overlay" id="modalBorrar">
   <div class="modal">
     <div class="modal-icon">🗑️</div>
-    <h3>Eliminar Deudor</h3>
-    <p>¿Seguro que quieres eliminar este registro? Esta acción no se puede deshacer.</p>
+    <h3>Eliminar Movimiento</h3>
+    <p>¿Seguro que quieres eliminar este movimiento de inventario? Esta acción no se puede deshacer.</p>
     <div class="modal-btns">
       <button class="btn btn-cancelar" onclick="cerrarModal()">Cancelar</button>
       <button class="btn btn-confirmar" id="btnConfirmarBorrar" onclick="confirmarBorrar()">Eliminar</button>
@@ -298,8 +284,8 @@ const API = location.hostname === 'localhost' || location.hostname === '127.0.0.
   ? 'http://localhost:3000'
   : 'https://agronaranjito-1.onrender.com';
 
-// Umbral de días para considerar "por vencer" (vence en los próximos N días)
-const UMBRAL_PORVENCER = 5;
+// ⚠️ AJUSTA ESTE ENDPOINT SI TU BACKEND USA OTRO NOMBRE (ej: /entrada-salida, /inventario/movimientos, etc.)
+const ENDPOINT = '/movimientos';
 
 // ===== Zona horaria de Ecuador (America/Guayaquil, UTC-5, sin horario de verano) =====
 function fechaEcuadorHoy() {
@@ -307,15 +293,8 @@ function fechaEcuadorHoy() {
     timeZone: 'America/Guayaquil', year: 'numeric', month: '2-digit', day: '2-digit'
   }).format(new Date());
 }
-function diasEntre(fechaA, fechaB) {
-  const [ya, ma, da] = fechaA.split('-').map(Number);
-  const [yb, mb, db] = fechaB.split('-').map(Number);
-  const A = Date.UTC(ya, ma - 1, da);
-  const B = Date.UTC(yb, mb - 1, db);
-  return Math.round((B - A) / 86400000);
-}
 
-// ===== Escapar texto antes de insertarlo como HTML (evita inyección / tablas rotas) =====
+// ===== Escapar texto antes de insertarlo como HTML =====
 function escapeHTML(str) {
   return String(str ?? '').replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -325,24 +304,23 @@ function escapeHTML(str) {
 document.getElementById('txt-fecha').textContent =
   new Date().toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Guayaquil' });
 
-let deudores = [];
+let movimientos = [];
 let filtroActivo = 'todos';
 let idABorrar = null;
 
 // ── CARGA ─────────────────────────────────────────────────────────
-async function cargarDeudores() {
+async function cargarMovimientos() {
   document.getElementById('tabla-contenedor').innerHTML =
-    '<div class="spinner-wrap"><div class="spinner"></div><br>Cargando deudores...</div>';
+    '<div class="spinner-wrap"><div class="spinner"></div><br>Cargando movimientos...</div>';
   try {
-    const r = await fetch(API + '/cuentas-cobrar');
+    const r = await fetch(API + ENDPOINT);
     if (!r.ok) throw new Error('Error ' + r.status);
-    deudores = await r.json();
-    if (!Array.isArray(deudores)) deudores = [];
+    movimientos = await r.json();
+    if (!Array.isArray(movimientos)) movimientos = [];
 
     renderStats();
-    renderAlertas();
     renderTabla();
-    mostrarToast('✅ Cuentas por cobrar sincronizadas');
+    mostrarToast('✅ Movimientos sincronizados');
   } catch (e) {
     console.error(e);
     document.getElementById('tabla-contenedor').innerHTML =
@@ -351,72 +329,20 @@ async function cargarDeudores() {
   }
 }
 
-// ── CLASIFICAR ESTADO DE LA DEUDA ────────────────────────────────
-function estadoDeuda(d) {
-  if (d.pagado) return 'pagado';
-  const hoy = fechaEcuadorHoy();
-  if (!d.fechaLimite) return 'pendiente';
-  const dias = diasEntre(hoy, d.fechaLimite); // positivo = falta, negativo = ya venció
-  if (dias < 0) return 'vencido';
-  if (dias <= UMBRAL_PORVENCER) return 'porvencer';
-  return 'pendiente';
-}
-
-function diasParaVencer(d) {
-  if (!d.fechaLimite) return null;
-  return diasEntre(fechaEcuadorHoy(), d.fechaLimite);
-}
-
 // ── STATS ─────────────────────────────────────────────────────────
 function renderStats() {
-  let montoTotal = 0, porvencer = 0, vencido = 0;
-  deudores.forEach(d => {
-    const e = estadoDeuda(d);
-    if (e !== 'pagado') montoTotal += Number(d.monto || 0);
-    if (e === 'porvencer') porvencer++;
-    if (e === 'vencido') vencido++;
+  let entradas = 0, salidas = 0, montoVendido = 0;
+  movimientos.forEach(m => {
+    if (m.tipo === 'entrada') entradas++;
+    if (m.tipo === 'salida') {
+      salidas++;
+      montoVendido += Number(m.monto || 0);
+    }
   });
-  document.getElementById('st-total').textContent    = deudores.length;
-  document.getElementById('st-monto').textContent    = '$' + montoTotal.toFixed(2);
-  document.getElementById('st-porvencer').textContent = porvencer;
-  document.getElementById('st-vencido').textContent   = vencido;
-}
-
-// ── ALERTAS ───────────────────────────────────────────────────────
-function renderAlertas() {
-  const cont = document.getElementById('alertas-wrap');
-  const vencidos  = deudores.filter(d => estadoDeuda(d) === 'vencido');
-  const porvencer = deudores.filter(d => estadoDeuda(d) === 'porvencer');
-
-  let html = '';
-
-  if (vencidos.length > 0) {
-    const nombres = vencidos.slice(0, 6).map(d => escapeHTML(d.cliente)).join(', ') + (vencidos.length > 6 ? ` y ${vencidos.length - 6} más` : '');
-    html += `
-      <div class="alerta vencido">
-        <span class="alerta-icon">🚫</span>
-        <div>
-          <div>${vencidos.length} deuda${vencidos.length !== 1 ? 's' : ''} vencida${vencidos.length !== 1 ? 's' : ''}</div>
-          <div class="alerta-detalle">${nombres}</div>
-        </div>
-        <button class="alerta-cerrar" onclick="this.parentElement.remove()">✕</button>
-      </div>`;
-  }
-
-  if (porvencer.length > 0) {
-    const nombres = porvencer.slice(0, 6).map(d => `${escapeHTML(d.cliente)} (${diasParaVencer(d)}d)`).join(', ') + (porvencer.length > 6 ? ` y ${porvencer.length - 6} más` : '');
-    html += `
-      <div class="alerta porvencer">
-        <span class="alerta-icon">⏳</span>
-        <div>
-          <div>${porvencer.length} deuda${porvencer.length !== 1 ? 's' : ''} por vencer (≤ ${UMBRAL_PORVENCER} días)</div>
-          <div class="alerta-detalle">${nombres}</div>
-        </div>
-        <button class="alerta-cerrar" onclick="this.parentElement.remove()">✕</button>
-      </div>`;
-  }
-
-  cont.innerHTML = html;
+  document.getElementById('st-total').textContent    = movimientos.length;
+  document.getElementById('st-entradas').textContent  = entradas;
+  document.getElementById('st-salidas').textContent   = salidas;
+  document.getElementById('st-monto').textContent     = '$' + montoVendido.toFixed(2);
 }
 
 // ── FILTROS ───────────────────────────────────────────────────────
@@ -425,96 +351,90 @@ function aplicarFiltro(f) {
   document.querySelectorAll('.filtro-btn').forEach(b => b.classList.toggle('active', b.dataset.f === f));
   renderTabla();
 }
+function limpiarFiltros() {
+  filtroActivo = 'todos';
+  document.getElementById('buscar').value = '';
+  document.getElementById('filtroFecha').value = '';
+  document.querySelectorAll('.filtro-btn').forEach(b => b.classList.toggle('active', b.dataset.f === 'todos'));
+  renderTabla();
+}
 
 // ── TABLA ─────────────────────────────────────────────────────────
-function renderTabla() {
-  const cont = document.getElementById('tabla-contenedor');
+function listaFiltrada() {
   const busqueda = (document.getElementById('buscar').value || '').toLowerCase().trim();
+  const fechaFiltro = document.getElementById('filtroFecha').value; // YYYY-MM-DD o ''
 
-  let lista = deudores.filter(d => {
-    if (filtroActivo !== 'todos' && estadoDeuda(d) !== filtroActivo) return false;
+  let lista = movimientos.filter(m => {
+    if (filtroActivo !== 'todos' && m.tipo !== filtroActivo) return false;
+    if (fechaFiltro && m.fecha !== fechaFiltro) return false;
     if (busqueda) {
-      const texto = `${d.cliente || ''} ${d.telefono || ''}`.toLowerCase();
+      const texto = `${m.producto || ''} ${m.cliente || ''}`.toLowerCase();
       if (!texto.includes(busqueda)) return false;
     }
     return true;
   });
 
-  // Ordenar: vencidos primero, luego por vencer, luego pendientes, pagados al final
-  const orden = { vencido: 0, porvencer: 1, pendiente: 2, pagado: 3 };
+  // Más reciente primero (fecha + hora)
   lista = lista.sort((a, b) => {
-    const oa = orden[estadoDeuda(a)], ob = orden[estadoDeuda(b)];
-    if (oa !== ob) return oa - ob;
-    return (a.cliente || '').localeCompare(b.cliente || '');
+    const fa = `${a.fecha || ''} ${a.hora || ''}`;
+    const fb = `${b.fecha || ''} ${b.hora || ''}`;
+    return fb.localeCompare(fa);
   });
 
+  return lista;
+}
+
+function renderTabla() {
+  const cont = document.getElementById('tabla-contenedor');
+  const lista = listaFiltrada();
+
   if (!lista.length) {
-    cont.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>No hay deudores que coincidan</p></div>';
+    cont.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>No hay movimientos que coincidan</p></div>';
     return;
   }
 
   cont.innerHTML = `
     <div class="tabla-wrap">
-      <table class="tabla-deudores">
+      <table class="tabla-mov">
         <thead>
           <tr>
-            <th>Cliente</th>
-            <th>Teléfono</th>
+            <th>Producto</th>
+            <th class="text-center">Tipo</th>
+            <th class="text-right">Cantidad</th>
+            <th>Cliente / Origen</th>
+            <th>Fecha</th>
+            <th>Hora</th>
             <th class="text-right">Monto</th>
-            <th>Fecha límite</th>
-            <th class="text-center">Estado</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
-          ${lista.map(d => {
-            const e = estadoDeuda(d);
-            const filaClase = e === 'vencido' ? 'fila-vencido' : e === 'porvencer' ? 'fila-porvencer' : '';
-            const badge = e === 'vencido'   ? '<span class="badge badge-vencido">🚫 Vencido</span>'
-                        : e === 'porvencer' ? '<span class="badge badge-porvencer">⏳ Por vencer</span>'
-                        : e === 'pagado'    ? '<span class="badge badge-pagado">✅ Pagado</span>'
-                        :                     '<span class="badge badge-pendiente">🟢 Al día</span>';
-            const acciones = e === 'pagado'
-              ? `<button class="btn-accion borrar" onclick="pedirBorrar('${d._id}')">🗑️ Eliminar</button>`
-              : `<button class="btn-accion pagar" onclick="marcarPagado('${d._id}', this)">✅ Pagado</button>
-                 <button class="btn-accion borrar" onclick="pedirBorrar('${d._id}')">🗑️</button>`;
+          ${lista.map(m => {
+            const esEntrada = m.tipo === 'entrada';
+            const filaClase = esEntrada ? 'fila-entrada' : 'fila-salida';
+            const badge = esEntrada
+              ? '<span class="badge badge-entrada">⬇️ Entrada</span>'
+              : '<span class="badge badge-salida">⬆️ Salida</span>';
+            const cantidadClase = esEntrada ? 'entrada' : 'salida';
+            const clienteTexto = esEntrada
+              ? (m.cliente ? escapeHTML(m.cliente) : '<span style="color:#b2bec3;">Proveedor / Compra</span>')
+              : (m.cliente ? escapeHTML(m.cliente) : '<span style="color:#b2bec3;">Sin especificar</span>');
+            const monto = m.monto ? '$' + Number(m.monto).toFixed(2) : '—';
             return `
             <tr class="${filaClase}">
-              <td data-label="Cliente" style="font-weight:600;">${escapeHTML(d.cliente || 'Sin nombre')}</td>
-              <td class="mono" data-label="Teléfono" style="color:#8395a7;">${escapeHTML(d.telefono || '—')}</td>
-              <td class="text-right" data-label="Monto"><span class="monto-val ${e}">$${Number(d.monto || 0).toFixed(2)}</span></td>
-              <td class="mono" data-label="Fecha límite" style="color:#8395a7;">${escapeHTML(d.fechaLimite || '—')}</td>
-              <td class="text-center" data-label="Estado">${badge}</td>
-              <td data-label="Acciones"><div class="acciones-fila">${acciones}</div></td>
+              <td data-label="Producto" style="font-weight:600;">${escapeHTML(m.producto || 'Sin nombre')}</td>
+              <td class="text-center" data-label="Tipo">${badge}</td>
+              <td class="text-right" data-label="Cantidad"><span class="cant-val ${cantidadClase}">${esEntrada ? '+' : '-'}${Number(m.cantidad || 0)}</span></td>
+              <td data-label="Cliente / Origen">${clienteTexto}</td>
+              <td class="mono" data-label="Fecha" style="color:#8395a7;">${escapeHTML(m.fecha || '—')}</td>
+              <td class="mono" data-label="Hora" style="color:#8395a7;">${escapeHTML(m.hora || '—')}</td>
+              <td class="text-right mono" data-label="Monto" style="color:#636e72;">${monto}</td>
+              <td data-label="Acciones"><div class="acciones-fila"><button class="btn-accion borrar" onclick="pedirBorrar('${m._id}')">🗑️ Eliminar</button></div></td>
             </tr>`;
           }).join('')}
         </tbody>
       </table>
     </div>`;
-}
-
-// ── MARCAR COMO PAGADO ───────────────────────────────────────────
-// Solo se actualiza la lista local y se muestra "éxito" si el servidor confirmó el cambio.
-// Si falla, se avisa al usuario y NO se toca el estado local (para no desincronizar con la BD).
-async function marcarPagado(id, btnEl) {
-  if (btnEl) btnEl.disabled = true;
-  try {
-    const res = await fetch(API + '/cuentas-cobrar/' + id, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pagado: true })
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-
-    const d = deudores.find(x => x._id === id);
-    if (d) d.pagado = true;
-    renderStats(); renderAlertas(); renderTabla();
-    mostrarToast('✅ Marcado como pagado');
-  } catch (e) {
-    console.error(e);
-    if (btnEl) btnEl.disabled = false;
-    mostrarToast('⚠️ No se pudo guardar el pago, intenta de nuevo', true);
-  }
 }
 
 // ── ELIMINAR ──────────────────────────────────────────────────────
@@ -526,19 +446,18 @@ function cerrarModal() {
   idABorrar = null;
   document.getElementById('modalBorrar').classList.remove('activo');
 }
-// Igual que marcarPagado: solo se quita de la lista local si el DELETE en el servidor tuvo éxito.
 async function confirmarBorrar() {
   if (!idABorrar) return;
   const btn = document.getElementById('btnConfirmarBorrar');
   btn.disabled = true;
   try {
-    const res = await fetch(API + '/cuentas-cobrar/' + idABorrar, { method: 'DELETE' });
+    const res = await fetch(API + ENDPOINT + '/' + idABorrar, { method: 'DELETE' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
 
-    deudores = deudores.filter(d => d._id !== idABorrar);
+    movimientos = movimientos.filter(m => m._id !== idABorrar);
     cerrarModal();
-    renderStats(); renderAlertas(); renderTabla();
-    mostrarToast('✅ Registro eliminado');
+    renderStats(); renderTabla();
+    mostrarToast('✅ Movimiento eliminado');
   } catch (e) {
     console.error(e);
     mostrarToast('⚠️ No se pudo eliminar, intenta de nuevo', true);
@@ -548,47 +467,30 @@ async function confirmarBorrar() {
 }
 
 // ── IMPRIMIR ──────────────────────────────────────────────────────
-function imprimirDeudores() {
-  const busqueda = (document.getElementById('buscar').value || '').toLowerCase().trim();
-  let lista = deudores.filter(d => {
-    if (filtroActivo !== 'todos' && estadoDeuda(d) !== filtroActivo) return false;
-    if (busqueda) {
-      const texto = `${d.cliente || ''} ${d.telefono || ''}`.toLowerCase();
-      if (!texto.includes(busqueda)) return false;
-    }
-    return true;
-  });
+function imprimirMovimientos() {
+  const lista = listaFiltrada();
+  const entradas = lista.filter(m => m.tipo === 'entrada').length;
+  const salidas  = lista.filter(m => m.tipo === 'salida').length;
+  const montoTotal = lista.reduce((s, m) => s + (m.tipo === 'salida' ? Number(m.monto || 0) : 0), 0);
 
-  const orden = { vencido: 0, porvencer: 1, pendiente: 2, pagado: 3 };
-  lista = lista.sort((a, b) => {
-    const oa = orden[estadoDeuda(a)], ob = orden[estadoDeuda(b)];
-    if (oa !== ob) return oa - ob;
-    return (a.cliente || '').localeCompare(b.cliente || '');
-  });
-
-  const totalDeudores = lista.length;
-  const montoTotal = lista.reduce((s, d) => s + (estadoDeuda(d) !== 'pagado' ? Number(d.monto || 0) : 0), 0);
-  const vencidos  = lista.filter(d => estadoDeuda(d) === 'vencido').length;
-  const porvencer = lista.filter(d => estadoDeuda(d) === 'porvencer').length;
-
-  const filas = lista.length ? lista.map((d, i) => {
-    const e = estadoDeuda(d);
-    const etiqueta = e === 'vencido' ? '🚫 Vencido' : e === 'porvencer' ? '⏳ Por vencer' : e === 'pagado' ? '✅ Pagado' : '🟢 Al día';
-    const color = e === 'vencido' ? '#b71c1c' : e === 'porvencer' ? '#b9650a' : e === 'pagado' ? '#3c6fe4' : '#00695c';
+  const filas = lista.length ? lista.map((m, i) => {
+    const esEntrada = m.tipo === 'entrada';
     return `
       <tr>
         <td>${i + 1}</td>
-        <td>${escapeHTML(d.cliente || 'Sin nombre')}</td>
-        <td>${escapeHTML(d.telefono || '—')}</td>
-        <td style="text-align:right; font-weight:700;">$${Number(d.monto || 0).toFixed(2)}</td>
-        <td>${escapeHTML(d.fechaLimite || '—')}</td>
-        <td style="text-align:center; color:${color}; font-weight:600;">${etiqueta}</td>
+        <td>${escapeHTML(m.producto || 'Sin nombre')}</td>
+        <td style="text-align:center; color:${esEntrada ? '#00695c' : '#b71c1c'}; font-weight:600;">${esEntrada ? '⬇️ Entrada' : '⬆️ Salida'}</td>
+        <td style="text-align:right; font-weight:700;">${esEntrada ? '+' : '-'}${Number(m.cantidad || 0)}</td>
+        <td>${escapeHTML(m.cliente || '—')}</td>
+        <td>${escapeHTML(m.fecha || '—')}</td>
+        <td>${escapeHTML(m.hora || '—')}</td>
+        <td style="text-align:right;">${m.monto ? '$' + Number(m.monto).toFixed(2) : '—'}</td>
       </tr>`;
-  }).join('') : `<tr><td colspan="6" style="text-align:center;color:#999;padding:20px;">Sin deudores para mostrar</td></tr>`;
+  }).join('') : `<tr><td colspan="8" style="text-align:center;color:#999;padding:20px;">Sin movimientos para mostrar</td></tr>`;
 
   const html = `
   <!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
-  <title>Cuentas por Cobrar</title>
+  <title>Entrada y Salida de Inventario</title>
   <style>
     * { box-sizing: border-box; }
     body { font-family: Arial, Helvetica, sans-serif; padding: 28px; color: #1e272e; }
@@ -604,17 +506,16 @@ function imprimirDeudores() {
     @media print { body { padding: 10px; } }
   </style></head>
   <body>
-    <h1>💸 Reporte de Cuentas por Cobrar</h1>
+    <h1>🔄 Reporte de Entrada y Salida de Inventario</h1>
     <div class="sub">Generado el ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })}</div>
     <table>
-      <thead><tr><th>#</th><th>Cliente</th><th>Teléfono</th><th style="text-align:right;">Monto</th><th>Fecha límite</th><th style="text-align:center;">Estado</th></tr></thead>
+      <thead><tr><th>#</th><th>Producto</th><th style="text-align:center;">Tipo</th><th style="text-align:right;">Cantidad</th><th>Cliente</th><th>Fecha</th><th>Hora</th><th style="text-align:right;">Monto</th></tr></thead>
       <tbody>${filas}</tbody>
     </table>
     <div class="resumen">
-      <div class="box"><div class="lbl">🧑 Total deudores</div><div class="val">${totalDeudores}</div></div>
-      <div class="box"><div class="lbl">⏳ Por vencer</div><div class="val" style="color:#b9650a;">${porvencer}</div></div>
-      <div class="box"><div class="lbl">🚫 Vencidos</div><div class="val" style="color:#b71c1c;">${vencidos}</div></div>
-      <div class="box"><div class="lbl">💰 Total por cobrar</div><div class="val">$${montoTotal.toFixed(2)}</div></div>
+      <div class="box"><div class="lbl">⬇️ Entradas</div><div class="val" style="color:#00695c;">${entradas}</div></div>
+      <div class="box"><div class="lbl">⬆️ Salidas</div><div class="val" style="color:#b71c1c;">${salidas}</div></div>
+      <div class="box"><div class="lbl">💰 Total vendido</div><div class="val">$${montoTotal.toFixed(2)}</div></div>
     </div>
   </body></html>`;
 
@@ -648,7 +549,7 @@ function mostrarToast(msg, esError) {
 }
 
 // ── INIT ──────────────────────────────────────────────────────────
-cargarDeudores();
+cargarMovimientos();
 </script>
 </body>
 </html>
