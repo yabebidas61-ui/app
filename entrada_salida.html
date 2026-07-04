@@ -284,7 +284,8 @@ const API = location.hostname === 'localhost' || location.hostname === '127.0.0.
   ? 'http://localhost:3000'
   : 'https://agronaranjito-1.onrender.com';
 
-const ENDPOINT = '/movimientos';
+// ⚠️ CORREGIDO: el backend expone la ruta '/movimientos-inventario', no '/movimientos'
+const ENDPOINT = '/movimientos-inventario';
 
 // ===== Zona horaria de Ecuador (America/Guayaquil, UTC-5, sin horario de verano) =====
 function fechaEcuadorHoy() {
@@ -316,6 +317,15 @@ async function cargarMovimientos() {
     if (!r.ok) throw new Error('Error ' + r.status);
     movimientos = await r.json();
     if (!Array.isArray(movimientos)) movimientos = [];
+
+    // El backend guarda el nombre del producto como "nombre" y el motivo como "motivo".
+    // Normalizamos aquí para que la tabla (que espera "producto", "cliente", "monto") funcione sin tocar más código.
+    movimientos = movimientos.map(m => ({
+      ...m,
+      producto: m.producto || m.nombre || 'Sin nombre',
+      cliente:  m.cliente  || m.motivo || '',
+      monto:    m.monto    ?? null
+    }));
 
     renderStats();
     renderTabla();
