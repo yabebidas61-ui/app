@@ -415,7 +415,9 @@ async function cargar() {
   document.getElementById('tabla-vencimientos').innerHTML = `
     <tr><td colspan="6"><div class="spinner-wrap"><div class="spinner"></div><br>Sincronizando...</div></td></tr>`;
   try {
-    const res = await fetch(API + '/inventario/caducidades');
+    // Tu backend no tiene una ruta separada de "caducidades": la fecha de
+    // vencimiento ya viene incluida en cada producto de /productos.
+    const res = await fetch(API + '/productos');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const raw = await res.json();
     todos = procesarProductos(raw);
@@ -433,13 +435,14 @@ async function cargar() {
 }
 
 // ── PROCESAR ─────────────────────────────────────────────────────
+// Solo se incluyen productos que tienen fecha de caducidad guardada.
 function procesarProductos(raw) {
   const hoy = new Date();
   hoy.setHours(0, 0, 0, 0);
 
   return raw
     .map(p => {
-      const fechaOrigen = p.fechaVencimiento || p.caducidad || p.vencimiento || p.fecha_vencimiento;
+      const fechaOrigen = p.caducidad || p.fechaVencimiento || p.vencimiento || p.fecha_vencimiento;
       if (!fechaOrigen) return null;
       const fechaStr = String(fechaOrigen).includes('T') ? fechaOrigen : fechaOrigen + 'T00:00:00';
       const fechaVenc = new Date(fechaStr);
