@@ -284,7 +284,6 @@ const API = location.hostname === 'localhost' || location.hostname === '127.0.0.
   ? 'http://localhost:3000'
   : 'https://agronaranjito-1.onrender.com';
 
-// ⚠️ AJUSTA ESTE ENDPOINT SI TU BACKEND USA OTRO NOMBRE (ej: /entrada-salida, /inventario/movimientos, etc.)
 const ENDPOINT = '/movimientos';
 
 // ===== Zona horaria de Ecuador (America/Guayaquil, UTC-5, sin horario de verano) =====
@@ -374,7 +373,6 @@ function listaFiltrada() {
     return true;
   });
 
-  // Más reciente primero (fecha + hora)
   lista = lista.sort((a, b) => {
     const fa = `${a.fecha || ''} ${a.hora || ''}`;
     const fb = `${b.fecha || ''} ${b.hora || ''}`;
