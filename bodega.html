@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e272e">
+<title>ContaNexus — Bodega</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
+body { font-family: 'IBM Plex Sans', sans-serif; display: flex; background: #f0f2f5; min-height: 100vh; overflow-x: hidden; }
+
+/* SIDEBAR: off-canvas drawer on mobile, static column on desktop */
+.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 900; opacity: 0; transition: opacity 0.25s; }
+.sidebar-overlay.activo { display: block; opacity: 1; }
+.sidebar { width: 240px; max-width: 78vw; background: #1e272e; color: white; height: 100vh; min-height: 100vh; padding: 20px; position: fixed; top: 0; left: 0; flex-shrink: 0; z-index: 950; transform: translateX(-100%); transition: transform 0.28s cubic-bezier(0.4,0,0.2,1); overflow-y: auto; }
+.sidebar.activo { transform: translateX(0); }
+.sidebar-close { display: block; margin-left: auto; background: none; border: none; color: #8395a7; font-size: 22px; line-height: 1; padding: 4px 8px; cursor: pointer; }
+.sidebar-brand { font-family: 'IBM Plex Mono', monospace; letter-spacing: 2px; color: #ff3f34; margin-bottom: 8px; font-size: 15px; font-weight: 700; }
+.sidebar-sub { font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 16px; }
+.nav-link { display: flex; align-items: center; gap: 10px; color: #c8d6e5; padding: 13px 12px; text-decoration: none; margin-top: 4px; border-radius: 6px; font-size: 15px; transition: background 0.2s; }
+.nav-link:hover, .nav-link:active { background: #485460; color: white; }
+.nav-link.active { background: #ff3f34; color: white; font-weight: 600; }
+
+/* MAIN */
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; width: 100%; }
+.header { background: linear-gradient(135deg, #1e272e 0%, #2f3640 100%); color: white; padding: 14px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 3px solid #ff3f34; position: sticky; top: 0; z-index: 500; flex-wrap: wrap; }
+.hamburger { background: none; border: none; color: white; font-size: 22px; padding: 6px 8px; cursor: pointer; line-height: 1; flex-shrink: 0; }
+.header-icon { font-size: 22px; flex-shrink: 0; }
+.header-title { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; }
+.header-sub { font-size: 11px; color: #8395a7; margin-top: 2px; }
+.fecha-sistema { font-size: 11px; color: #8395a7; font-family: 'IBM Plex Mono', monospace; margin-left: auto; width: 100%; text-align: right; order: 3; }
+
+.contenido { padding: 14px; flex: 1; }
+
+/* ALERTAS */
+.alertas-wrap { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.alerta { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 12px; font-size: 13px; font-weight: 600; box-shadow: 0 2px 10px rgba(0,0,0,0.06); animation: slideIn 0.35s ease; }
+@keyframes slideIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+.alerta-icon { font-size: 18px; flex-shrink: 0; }
+.alerta.agotado { background: #fde8e8; color: #b71c1c; border: 1.5px solid #f5b7b1; }
+.alerta.bajo { background: #fff3e0; color: #b9650a; border: 1.5px solid #ffd9a0; }
+.alerta-detalle { font-weight: 400; font-size: 12px; opacity: 0.85; margin-top: 2px; }
+.alerta-cerrar { margin-left: auto; background: none; border: none; cursor: pointer; font-size: 18px; color: inherit; opacity: 0.6; padding: 2px 6px; flex-shrink: 0; }
+.alerta-cerrar:hover { opacity: 1; }
+
+/* STATS RESUMEN */
+.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+.stat { background: white; border-radius: 12px; padding: 13px 14px; box-shadow: 0 2px 12px rgba(0,0,0,0.07); border-top: 3px solid #ddd; cursor: pointer; transition: transform 0.15s; min-width: 0; }
+.stat:hover { transform: translateY(-2px); }
+.stat.total    { border-top-color: #3c6fe4; }
+.stat.ok       { border-top-color: #00b894; }
+.stat.bajo     { border-top-color: #f39c12; }
+.stat.agotado  { border-top-color: #e74c3c; }
+.stat-label { font-size: 10px; color: #8395a7; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 4px; line-height: 1.3; }
+.stat-val { font-family: 'IBM Plex Mono', monospace; font-size: 21px; font-weight: 700; color: #1e272e; }
+.stat.total .stat-val   { color: #3c6fe4; }
+.stat.ok .stat-val      { color: #00b894; }
+.stat.bajo .stat-val    { color: #f39c12; }
+.stat.agotado .stat-val { color: #e74c3c; }
+
+/* CARD */
+.card { background: white; border-radius: 14px; padding: 16px 14px; box-shadow: 0 2px 14px rgba(0,0,0,0.07); margin-bottom: 16px; }
+.card-title { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 700; color: #1e272e; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.card-title span.t { display: flex; align-items: center; gap: 8px; }
+.card-title > div { width: 100%; display: flex; gap: 8px; }
+.card-title > div .btn { flex: 1; }
+
+/* CONTROLES */
+.controles { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; margin-bottom: 14px; }
+.search-box { flex: 1 1 100%; min-width: 0; position: relative; }
+.search-box input { width: 100%; padding: 12px 14px 12px 36px; border: 1.5px solid #dfe6e9; border-radius: 8px; font-family: 'IBM Plex Sans', sans-serif; font-size: 16px; outline: none; background: white; }
+.search-box input:focus { border-color: #ff3f34; }
+.search-box .ico { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #b2bec3; font-size: 14px; }
+.filtro-btns { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; }
+.filtro-btn { padding: 9px 14px; border: 1.5px solid #dfe6e9; background: white; border-radius: 20px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: #636e72; transition: all 0.15s; flex: 1 1 auto; white-space: nowrap; }
+.filtro-btn.active { background: #1e272e; color: white; border-color: #1e272e; }
+.filtro-btn:hover:not(.active) { background: #f1f2f6; }
+.btn { padding: 11px 18px; border: none; border-radius: 8px; cursor: pointer; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; font-weight: 600; transition: all 0.2s; white-space: nowrap; min-height: 42px; }
+.btn-primary { background: #ff3f34; color: white; }
+.btn-primary:hover { background: #c0392b; }
+.btn-dark { background: #2d3436; color: white; }
+.btn-dark:hover { background: #1e272e; }
+
+/* TABLA */
+.tabla-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+thead tr { background: #f8f9fa; }
+th { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; color: #636e72; text-transform: uppercase; letter-spacing: 0.5px; padding: 11px 14px; text-align: left; border-bottom: 2px solid #dfe6e9; white-space: nowrap; }
+td { padding: 11px 14px; font-size: 13.5px; color: #2d3436; border-bottom: 1px solid #f1f2f6; vertical-align: middle; }
+tr:hover td { background: #fafbfc; }
+.mono { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; }
+.fw7 { font-weight: 700; }
+.text-right { text-align: right; }
+.text-center { text-align: center; }
+.fila-agotado td { background: #fff7f7; }
+.fila-bajo td { background: #fffaf3; }
+
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; white-space: nowrap; }
+.badge-ok      { background: #d4f5e9; color: #00695c; }
+.badge-bajo    { background: #fff3e0; color: #b9650a; }
+.badge-agotado { background: #fde8e8; color: #b71c1c; }
+
+.stock-val { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 14px; }
+.stock-val.ok      { color: #00695c; }
+.stock-val.bajo    { color: #b9650a; }
+.stock-val.agotado { color: #b71c1c; }
+
+/* SPINNER / EMPTY */
+.spinner-wrap { text-align: center; padding: 50px 20px; color: #8395a7; font-size: 14px; }
+.spinner { display: inline-block; width: 28px; height: 28px; border: 3px solid #dfe6e9; border-top-color: #ff3f34; border-radius: 50%; animation: spin 0.7s linear infinite; margin-bottom: 10px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.empty-state { text-align: center; padding: 40px 20px; color: #b2bec3; }
+.empty-icon { font-size: 40px; margin-bottom: 10px; }
+
+/* TOAST */
+.toast { position: fixed; bottom: 28px; right: 28px; background: #2d3436; color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); transform: translateY(80px); opacity: 0; transition: all 0.35s cubic-bezier(0.34,1.56,0.64,1); z-index: 1000; }
+.toast.visible { transform: translateY(0); opacity: 1; }
+
+/* ===== MOBILE: table becomes a stack of cards ===== */
+@media (max-width: 768px) {
+  table.tabla-bodega thead { display: none; }
+  table.tabla-bodega, table.tabla-bodega tbody, table.tabla-bodega tr, table.tabla-bodega td { display: block; width: 100%; }
+  table.tabla-bodega tr { border: 1px solid #eef0f2; border-radius: 10px; margin-bottom: 10px; padding: 4px 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+  table.tabla-bodega tr:hover td { background: transparent; }
+  table.tabla-bodega td { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f5f6f8; text-align: right; }
+  table.tabla-bodega td:last-child { border-bottom: none; }
+  table.tabla-bodega td[data-label]::before { content: attr(data-label); font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 700; color: #b2bec3; text-transform: uppercase; letter-spacing: 0.4px; text-align: left; }
+  table.tabla-bodega td[data-label="Producto"] { padding-top: 12px; }
+  table.tabla-bodega td[data-label="Producto"]::before { content: "📦"; }
+  .toast { left: 16px; right: 16px; bottom: 20px; text-align: center; }
+}
+
+/* ===== TABLET / DESKTOP: restore static sidebar and original spacing ===== */
+@media (min-width: 769px) {
+  .hamburger, .sidebar-close, .sidebar-overlay { display: none !important; }
+  .sidebar { position: sticky; top: 0; transform: none; width: 220px; max-width: none; height: auto; }
+  .contenido { padding: 24px 28px; }
+  .header { padding: 18px 28px; }
+  .header-icon { font-size: 26px; }
+  .header-title { font-size: 18px; }
+  .header-sub { font-size: 12px; }
+  .fecha-sistema { font-size: 12px; width: auto; order: 0; }
+  .alertas-wrap { margin-bottom: 20px; }
+  .alerta { padding: 14px 18px; font-size: 14px; }
+  .alerta-detalle { font-size: 12.5px; }
+  .stats { grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+  .stat { padding: 18px 20px; }
+  .stat-label { font-size: 11px; }
+  .stat-val { font-size: 26px; }
+  .card { padding: 20px 24px; margin-bottom: 20px; }
+  .card-title { margin-bottom: 16px; }
+  .card-title > div { width: auto; }
+  .card-title > div .btn { flex: none; }
+  .controles { gap: 10px; margin-bottom: 16px; }
+  .search-box { flex: 1; min-width: 220px; }
+  .search-box input { padding: 10px 14px 10px 36px; font-size: 14px; }
+  .filtro-btns { width: auto; }
+  .filtro-btn { flex: none; border-radius: 8px; font-size: 13px; padding: 9px 16px; }
+  .btn { width: auto; min-height: auto; }
+}
+
+@media print {
+  .sidebar, .controles, .btn, .toast, .alertas-wrap, .stats, .alerta-cerrar { display: none !important; }
+  body { display: block; }
+  .main { width: 100%; }
+  .contenido { padding: 0; }
+  .card { box-shadow: none; border: 1px solid #ddd; }
+}
+</style>
+</head>
+<body>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="cerrarMenu()"></div>
+<div class="sidebar" id="sidebar">
+  <button class="sidebar-close" onclick="cerrarMenu()" aria-label="Cerrar menú">✕</button>
+  <div class="sidebar-brand">ContaNexus</div>
+  <div class="sidebar-sub">Control de Inventario</div>
+  <a href="index.html" class="nav-link">📅 Historial de Caja</a>
+  <a href="entrada_salida.html" class="nav-link">🔄 Movimientos Inventario</a>
+  <a href="bodega.html" class="nav-link active">📦 Bodega</a>
+  <a href="vencimientos.html" class="nav-link">⏳ Vencimientos</a>
+  <a href="cuentas_cobrar.html" class="nav-link">💸 Cuentas por Cobrar</a>
+</div>
+
+<div class="main">
+  <div class="header">
+    <button class="hamburger" onclick="abrirMenu()" aria-label="Abrir menú">☰</button>
+    <div class="header-icon">📦</div>
+    <div>
+      <div class="header-title">BODEGA</div>
+      <div class="header-sub">Inventario, alertas de stock y reportes</div>
+    </div>
+    <div class="fecha-sistema" id="txt-fecha"></div>
+  </div>
+
+  <div class="contenido">
+
+    <!-- ALERTAS -->
+    <div class="alertas-wrap" id="alertas-wrap"></div>
+
+    <!-- STATS -->
+    <div class="stats">
+      <div class="stat total" onclick="aplicarFiltro('todos')">
+        <div class="stat-label">📦 Total Productos</div>
+        <div class="stat-val" id="st-total">0</div>
+      </div>
+      <div class="stat ok" onclick="aplicarFiltro('ok')">
+        <div class="stat-label">✅ Stock Normal</div>
+        <div class="stat-val" id="st-ok">0</div>
+      </div>
+      <div class="stat bajo" onclick="aplicarFiltro('bajo')">
+        <div class="stat-label">⚠️ Por Agotarse</div>
+        <div class="stat-val" id="st-bajo">0</div>
+      </div>
+      <div class="stat agotado" onclick="aplicarFiltro('agotado')">
+        <div class="stat-label">🚫 Agotados</div>
+        <div class="stat-val" id="st-agotado">0</div>
+      </div>
+    </div>
+
+    <!-- TABLA PRODUCTOS -->
+    <div class="card">
+      <div class="card-title">
+        <span class="t">📋 Inventario de Productos</span>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-dark" style="font-size:13px; padding:7px 14px;" onclick="cargarProductos()">⟳ Actualizar</button>
+          <button class="btn btn-primary" style="font-size:13px; padding:7px 14px;" onclick="imprimirInventario()">🖨️ Imprimir</button>
+        </div>
+      </div>
+
+      <div class="controles">
+        <div class="search-box">
+          <span class="ico">🔍</span>
+          <input type="text" id="buscar" placeholder="Buscar por nombre o código..." oninput="renderTabla()">
+        </div>
+        <div class="filtro-btns">
+          <button class="filtro-btn active" data-f="todos" onclick="aplicarFiltro('todos')">Todos</button>
+          <button class="filtro-btn" data-f="ok" onclick="aplicarFiltro('ok')">✅ Normal</button>
+          <button class="filtro-btn" data-f="bajo" onclick="aplicarFiltro('bajo')">⚠️ Por agotarse</button>
+          <button class="filtro-btn" data-f="agotado" onclick="aplicarFiltro('agotado')">🚫 Agotados</button>
+        </div>
+      </div>
+
+      <div id="tabla-contenedor">
+        <div class="spinner-wrap"><div class="spinner"></div><br>Cargando bodega...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+  ? 'http://localhost:3000'
+  : 'https://agronaranjito-1.onrender.com';
+
+// Umbral para considerar "por agotarse" (3 unidades o menos, pero más de 0)
+const UMBRAL_BAJO = 3;
+
+document.getElementById('txt-fecha').textContent =
+  new Date().toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+let productos = [];
+let filtroActivo = 'todos';
+
+// ── CARGA ─────────────────────────────────────────────────────────
+async function cargarProductos() {
+  document.getElementById('tabla-contenedor').innerHTML =
+    '<div class="spinner-wrap"><div class="spinner"></div><br>Cargando bodega...</div>';
+  try {
+    const r = await fetch(API + '/productos');
+    if (!r.ok) throw new Error('Error ' + r.status);
+    productos = await r.json();
+    if (!Array.isArray(productos)) productos = [];
+
+    renderStats();
+    renderAlertas();
+    renderTabla();
+    mostrarToast('✅ Bodega sincronizada');
+  } catch (e) {
+    console.error(e);
+    document.getElementById('tabla-contenedor').innerHTML =
+      '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Error al conectar: ' + e.message + '</p></div>';
+  }
+}
+
+// ── CLASIFICAR ESTADO DE STOCK ──────────────────────────────────────
+function estadoStock(stock) {
+  const s = Number(stock || 0);
+  if (s <= 0) return 'agotado';
+  if (s <= UMBRAL_BAJO) return 'bajo';
+  return 'ok';
+}
+
+// ── STATS ─────────────────────────────────────────────────────────
+function renderStats() {
+  let ok = 0, bajo = 0, agotado = 0;
+  productos.forEach(p => {
+    const e = estadoStock(p.stock);
+    if (e === 'ok') ok++;
+    else if (e === 'bajo') bajo++;
+    else agotado++;
+  });
+  document.getElementById('st-total').textContent   = productos.length;
+  document.getElementById('st-ok').textContent       = ok;
+  document.getElementById('st-bajo').textContent     = bajo;
+  document.getElementById('st-agotado').textContent  = agotado;
+}
+
+// ── ALERTAS ───────────────────────────────────────────────────────
+function renderAlertas() {
+  const cont = document.getElementById('alertas-wrap');
+  const agotados = productos.filter(p => estadoStock(p.stock) === 'agotado');
+  const bajos    = productos.filter(p => estadoStock(p.stock) === 'bajo');
+
+  let html = '';
+
+  if (agotados.length > 0) {
+    const nombres = agotados.slice(0, 6).map(p => p.nombre).join(', ') + (agotados.length > 6 ? ` y ${agotados.length - 6} más` : '');
+    html += `
+      <div class="alerta agotado">
+        <span class="alerta-icon">🚫</span>
+        <div>
+          <div>${agotados.length} producto${agotados.length !== 1 ? 's' : ''} agotado${agotados.length !== 1 ? 's' : ''}</div>
+          <div class="alerta-detalle">${nombres}</div>
+        </div>
+        <button class="alerta-cerrar" onclick="this.parentElement.remove()">✕</button>
+      </div>`;
+  }
+
+  if (bajos.length > 0) {
+    const nombres = bajos.slice(0, 6).map(p => `${p.nombre} (${p.stock})`).join(', ') + (bajos.length > 6 ? ` y ${bajos.length - 6} más` : '');
+    html += `
+      <div class="alerta bajo">
+        <span class="alerta-icon">⚠️</span>
+        <div>
+          <div>${bajos.length} producto${bajos.length !== 1 ? 's' : ''} por agotarse (≤ ${UMBRAL_BAJO} unidades)</div>
+          <div class="alerta-detalle">${nombres}</div>
+        </div>
+        <button class="alerta-cerrar" onclick="this.parentElement.remove()">✕</button>
+      </div>`;
+  }
+
+  cont.innerHTML = html;
+
+  // Notificación nativa del navegador (si el usuario la permite)
+  if (agotados.length > 0 || bajos.length > 0) {
+    notificarNavegador(agotados.length, bajos.length);
+  }
+}
+
+function notificarNavegador(numAgotados, numBajos) {
+  if (!('Notification' in window)) return;
+  const lanzar = () => {
+    if (Notification.permission !== 'granted') return;
+    let partes = [];
+    if (numAgotados > 0) partes.push(`${numAgotados} agotado${numAgotados !== 1 ? 's' : ''}`);
+    if (numBajos > 0) partes.push(`${numBajos} por agotarse`);
+    new Notification('📦 Alerta de Bodega — ContaNexus', {
+      body: partes.join(' · '),
+      icon: undefined
+    });
+  };
+  if (Notification.permission === 'granted') {
+    lanzar();
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission().then(p => { if (p === 'granted') lanzar(); });
+  }
+}
+
+// ── FILTROS ───────────────────────────────────────────────────────
+function aplicarFiltro(f) {
+  filtroActivo = f;
+  document.querySelectorAll('.filtro-btn').forEach(b => b.classList.toggle('active', b.dataset.f === f));
+  renderTabla();
+}
+
+// ── TABLA ─────────────────────────────────────────────────────────
+function renderTabla() {
+  const cont = document.getElementById('tabla-contenedor');
+  const busqueda = (document.getElementById('buscar').value || '').toLowerCase().trim();
+
+  let lista = productos.filter(p => {
+    if (filtroActivo !== 'todos' && estadoStock(p.stock) !== filtroActivo) return false;
+    if (busqueda) {
+      const texto = `${p.nombre || ''} ${p.codigo || ''}`.toLowerCase();
+      if (!texto.includes(busqueda)) return false;
+    }
+    return true;
+  });
+
+  // Ordenar: agotados primero, luego bajos, luego normales, alfabético dentro de cada grupo
+  const orden = { agotado: 0, bajo: 1, ok: 2 };
+  lista = lista.sort((a, b) => {
+    const oa = orden[estadoStock(a.stock)], ob = orden[estadoStock(b.stock)];
+    if (oa !== ob) return oa - ob;
+    return (a.nombre || '').localeCompare(b.nombre || '');
+  });
+
+  if (!lista.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>No hay productos que coincidan</p></div>';
+    return;
+  }
+
+  cont.innerHTML = `
+    <div class="tabla-wrap">
+      <table class="tabla-bodega">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Producto</th>
+            <th class="text-center">Stock</th>
+            <th class="text-right">Precio Compra</th>
+            <th class="text-right">Precio Venta</th>
+            <th>Caducidad</th>
+            <th class="text-center">Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${lista.map(p => {
+            const e = estadoStock(p.stock);
+            const filaClase = e === 'agotado' ? 'fila-agotado' : e === 'bajo' ? 'fila-bajo' : '';
+            const badge = e === 'agotado'
+              ? '<span class="badge badge-agotado">🚫 Agotado</span>'
+              : e === 'bajo'
+                ? '<span class="badge badge-bajo">⚠️ Por agotarse</span>'
+                : '<span class="badge badge-ok">✅ Normal</span>';
+            return `
+            <tr class="${filaClase}">
+              <td class="mono" data-label="Código" style="color:#b2bec3;">${p.codigo || '-'}</td>
+              <td data-label="Producto" style="font-weight:600;">${p.nombre || 'Sin Nombre'}</td>
+              <td class="text-center" data-label="Stock"><span class="stock-val ${e}">${p.stock ?? 0}</span></td>
+              <td class="mono text-right" data-label="P. Compra">$${Number(p.precioCompra || 0).toFixed(2)}</td>
+              <td class="mono text-right fw7" data-label="P. Venta">$${Number(p.precioVenta || 0).toFixed(2)}</td>
+              <td class="mono" data-label="Caducidad" style="color:#8395a7;">${p.caducidad || '—'}</td>
+              <td class="text-center" data-label="Estado">${badge}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// ── IMPRIMIR INVENTARIO ──────────────────────────────────────────
+function imprimirInventario() {
+  const busqueda = (document.getElementById('buscar').value || '').toLowerCase().trim();
+  let lista = productos.filter(p => {
+    if (filtroActivo !== 'todos' && estadoStock(p.stock) !== filtroActivo) return false;
+    if (busqueda) {
+      const texto = `${p.nombre || ''} ${p.codigo || ''}`.toLowerCase();
+      if (!texto.includes(busqueda)) return false;
+    }
+    return true;
+  });
+
+  const orden = { agotado: 0, bajo: 1, ok: 2 };
+  lista = lista.sort((a, b) => {
+    const oa = orden[estadoStock(a.stock)], ob = orden[estadoStock(b.stock)];
+    if (oa !== ob) return oa - ob;
+    return (a.nombre || '').localeCompare(b.nombre || '');
+  });
+
+  const totalProductos = lista.length;
+  const agotados = lista.filter(p => estadoStock(p.stock) === 'agotado').length;
+  const bajos    = lista.filter(p => estadoStock(p.stock) === 'bajo').length;
+  const valorInventario = lista.reduce((s, p) => s + Number(p.precioCompra || 0) * Number(p.stock || 0), 0);
+
+  const filas = lista.length ? lista.map((p, i) => {
+    const e = estadoStock(p.stock);
+    const etiqueta = e === 'agotado' ? '🚫 Agotado' : e === 'bajo' ? '⚠️ Por agotarse' : '✅ Normal';
+    const color = e === 'agotado' ? '#b71c1c' : e === 'bajo' ? '#b9650a' : '#00695c';
+    return `
+      <tr>
+        <td>${i + 1}</td>
+        <td style="color:#888; font-size:11px;">${p.codigo || '-'}</td>
+        <td>${p.nombre || 'Sin Nombre'}</td>
+        <td style="text-align:center; font-weight:700; color:${color};">${p.stock ?? 0}</td>
+        <td style="text-align:right;">$${Number(p.precioCompra || 0).toFixed(2)}</td>
+        <td style="text-align:right;">$${Number(p.precioVenta || 0).toFixed(2)}</td>
+        <td style="text-align:center; color:${color}; font-weight:600;">${etiqueta}</td>
+      </tr>`;
+  }).join('') : `<tr><td colspan="7" style="text-align:center;color:#999;padding:20px;">Sin productos para mostrar</td></tr>`;
+
+  const html = `
+  <!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+  <title>Inventario de Bodega</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; padding: 28px; color: #1e272e; }
+    h1 { font-size: 18px; margin-bottom: 2px; }
+    .sub { color: #777; font-size: 12px; margin-bottom: 18px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th { text-align: left; font-size: 11px; text-transform: uppercase; color: #555; border-bottom: 2px solid #ccc; padding: 8px 6px; }
+    td { padding: 7px 6px; border-bottom: 1px solid #eee; font-size: 12.5px; }
+    .resumen { margin-top: 22px; display: flex; gap: 16px; flex-wrap: wrap; }
+    .box { border: 1px solid #ddd; border-radius: 8px; padding: 10px 16px; min-width: 130px; }
+    .box .lbl { font-size: 10px; text-transform: uppercase; color: #888; }
+    .box .val { font-size: 16px; font-weight: 700; margin-top: 2px; }
+    @media print { body { padding: 10px; } }
+  </style></head>
+  <body>
+    <h1>📦 Reporte de Inventario — Bodega</h1>
+    <div class="sub">Generado el ${new Date().toLocaleString('es-EC')}</div>
+    <table>
+      <thead><tr><th>#</th><th>Código</th><th>Producto</th><th style="text-align:center;">Stock</th><th style="text-align:right;">P. Compra</th><th style="text-align:right;">P. Venta</th><th style="text-align:center;">Estado</th></tr></thead>
+      <tbody>${filas}</tbody>
+    </table>
+    <div class="resumen">
+      <div class="box"><div class="lbl">📦 Total productos</div><div class="val">${totalProductos}</div></div>
+      <div class="box"><div class="lbl">⚠️ Por agotarse</div><div class="val" style="color:#b9650a;">${bajos}</div></div>
+      <div class="box"><div class="lbl">🚫 Agotados</div><div class="val" style="color:#b71c1c;">${agotados}</div></div>
+      <div class="box"><div class="lbl">💰 Valor inventario (costo)</div><div class="val">$${valorInventario.toFixed(2)}</div></div>
+    </div>
+  </body></html>`;
+
+  const ventana = window.open('', '_blank', 'width=900,height=900');
+  if (!ventana) { mostrarToast('⚠️ El navegador bloqueó la ventana de impresión'); return; }
+  ventana.document.open();
+  ventana.document.write(html);
+  ventana.document.close();
+  ventana.onload = () => { ventana.focus(); ventana.print(); };
+}
+
+function abrirMenu() {
+  document.getElementById('sidebar').classList.add('activo');
+  document.getElementById('sidebarOverlay').classList.add('activo');
+  document.body.style.overflow = 'hidden';
+}
+function cerrarMenu() {
+  document.getElementById('sidebar').classList.remove('activo');
+  document.getElementById('sidebarOverlay').classList.remove('activo');
+  document.body.style.overflow = '';
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────
+function mostrarToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('visible');
+  setTimeout(() => t.classList.remove('visible'), 3000);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+cargarProductos();
+// Revisión periódica cada 5 minutos mientras la pestaña esté abierta
+setInterval(cargarProductos, 5 * 60 * 1000);
+</script>
+</body>
+</html>

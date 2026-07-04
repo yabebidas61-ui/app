@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e272e">
+<title>ContaNexus — Historial de Caja</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
+body { font-family: 'IBM Plex Sans', sans-serif; display: flex; background: #f0f2f5; min-height: 100vh; overflow-x: hidden; }
+
+/* ===== SIDEBAR: off-canvas drawer on mobile, static column on desktop ===== */
+.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 900; opacity: 0; transition: opacity 0.25s; }
+.sidebar-overlay.activo { display: block; opacity: 1; }
+.sidebar { width: 240px; max-width: 78vw; background: #1e272e; color: white; height: 100vh; min-height: 100vh; padding: 20px; position: fixed; top: 0; left: 0; flex-shrink: 0; z-index: 950; transform: translateX(-100%); transition: transform 0.28s cubic-bezier(0.4,0,0.2,1); overflow-y: auto; }
+.sidebar.activo { transform: translateX(0); }
+.sidebar-close { display: block; margin-left: auto; background: none; border: none; color: #8395a7; font-size: 22px; line-height: 1; padding: 4px 8px; cursor: pointer; }
+.sidebar-brand { font-family: 'IBM Plex Mono', monospace; letter-spacing: 2px; color: #ff3f34; margin-bottom: 8px; font-size: 15px; font-weight: 700; }
+.sidebar-sub { font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 16px; }
+.nav-link { display: flex; align-items: center; gap: 10px; color: #c8d6e5; padding: 13px 12px; text-decoration: none; margin-top: 4px; border-radius: 6px; font-size: 15px; transition: background 0.2s; }
+.nav-link:hover, .nav-link:active { background: #485460; color: white; }
+.nav-link.active { background: #ff3f34; color: white; font-weight: 600; }
+
+/* ===== MAIN ===== */
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; width: 100%; }
+.header { background: linear-gradient(135deg, #1e272e 0%, #2f3640 100%); color: white; padding: 14px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 3px solid #ff3f34; position: sticky; top: 0; z-index: 500; flex-wrap: wrap; }
+.hamburger { background: none; border: none; color: white; font-size: 22px; padding: 6px 8px; cursor: pointer; line-height: 1; flex-shrink: 0; }
+.header-icon { font-size: 22px; flex-shrink: 0; }
+.header-title { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; }
+.header-sub { font-size: 11px; color: #8395a7; margin-top: 2px; }
+.fecha-sistema { font-size: 11px; color: #8395a7; font-family: 'IBM Plex Mono', monospace; margin-left: auto; width: 100%; text-align: right; order: 3; }
+
+.contenido { padding: 14px; flex: 1; }
+
+.tabs { display: flex; gap: 6px; margin-bottom: 18px; background: white; padding: 6px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); width: 100%; }
+.tab { flex: 1; padding: 10px 14px; border: none; border-radius: 8px; cursor: pointer; font-family: 'IBM Plex Sans', sans-serif; font-size: 13.5px; font-weight: 600; transition: all 0.2s; background: transparent; color: #8395a7; white-space: nowrap; }
+.tab.active { background: #ff3f34; color: white; box-shadow: 0 2px 8px rgba(255,63,52,0.35); }
+.tab:hover:not(.active) { background: #f1f2f6; color: #2d3436; }
+
+.panel { display: none; }
+.panel.active { display: block; }
+
+.mes-selector { display: flex; gap: 10px; align-items: stretch; margin-bottom: 18px; flex-wrap: wrap; }
+.mes-selector select { flex: 1 1 100%; min-width: 0; padding: 12px 14px; border: 1.5px solid #dfe6e9; border-radius: 8px; font-family: 'IBM Plex Sans', sans-serif; font-size: 16px; background: white; color: #2d3436; outline: none; }
+.mes-selector select:focus { border-color: #ff3f34; }
+.mes-selector .btn { flex: 1 1 100%; }
+.btn { padding: 12px 18px; border: none; border-radius: 8px; cursor: pointer; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; font-weight: 600; transition: all 0.2s; min-height: 44px; }
+.btn-primary { background: #ff3f34; color: white; }
+.btn-primary:hover { background: #c0392b; }
+.btn-dark { background: #2d3436; color: white; }
+.btn-dark:hover { background: #1e272e; }
+
+.card { background: white; border-radius: 14px; padding: 16px 14px; box-shadow: 0 2px 14px rgba(0,0,0,0.07); margin-bottom: 16px; }
+.card-title { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 700; color: #1e272e; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.card-title span { display: flex; align-items: center; gap: 8px; }
+
+.stats-mes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+.stat-m { background: white; border-radius: 12px; padding: 13px 14px; box-shadow: 0 2px 12px rgba(0,0,0,0.07); border-top: 3px solid #ddd; min-width: 0; }
+.stat-m.ingreso  { border-top-color: #00b894; }
+.stat-m.gasto    { border-top-color: #e74c3c; }
+.stat-m.transfer { border-top-color: #3c6fe4; }
+.stat-m.neto     { border-top-color: #ff3f34; }
+.stat-m-label { font-size: 10px; color: #8395a7; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 5px; line-height: 1.3; }
+.stat-m-val { font-family: 'IBM Plex Mono', monospace; font-size: 18px; font-weight: 700; color: #1e272e; }
+.stat-m-val.green  { color: #00b894; }
+.stat-m-val.red    { color: #e74c3c; }
+.stat-m-val.blue   { color: #3c6fe4; }
+.stat-m-val.accent { color: #ff3f34; }
+
+.tabla-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+thead tr { background: #f8f9fa; }
+th { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; color: #636e72; text-transform: uppercase; letter-spacing: 0.5px; padding: 11px 14px; text-align: left; border-bottom: 2px solid #dfe6e9; white-space: nowrap; }
+td { padding: 11px 14px; font-size: 13.5px; color: #2d3436; border-bottom: 1px solid #f1f2f6; vertical-align: middle; }
+tr:hover td { background: #fafbfc; }
+.mono { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; }
+.fw7 { font-weight: 700; }
+.text-right { text-align: right; }
+.text-center { text-align: center; }
+
+.dia-row { border: 1.5px solid #f1f2f6; border-radius: 12px; margin-bottom: 10px; overflow: hidden; transition: box-shadow 0.2s; }
+.dia-row:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.09); }
+.dia-header { display: flex; align-items: center; gap: 10px; padding: 13px 14px; background: white; user-select: none; flex-wrap: wrap; }
+.dia-fecha { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 700; color: #1e272e; min-width: 0; flex-shrink: 0; }
+.dia-chips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1 1 100%; order: 3; }
+.dia-chip { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 16px; white-space: nowrap; }
+.chip-ventas   { background: #d4f5e9; color: #00695c; }
+.chip-gastos   { background: #fde8e8; color: #b71c1c; }
+.chip-transfer { background: #e3edff; color: #1a4a9e; }
+.chip-neto     { background: #1e272e; color: white; }
+.dia-toggle { font-size: 18px; color: #b2bec3; margin-left: auto; transition: transform 0.25s; cursor: pointer; flex-shrink: 0; }
+.dia-row.open .dia-toggle { transform: rotate(180deg); }
+.dia-body { display: none; border-top: 1.5px solid #f1f2f6; background: #fafbfc; }
+.dia-row.open .dia-body { display: block; }
+
+.dia-acciones { display: flex; gap: 6px; margin-left: auto; flex-shrink: 0; }
+.icon-btn { border: none; background: #f1f2f6; color: #636e72; width: 34px; height: 34px; border-radius: 8px; cursor: pointer; font-size: 15px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; }
+.icon-btn:hover { transform: scale(1.08); }
+.icon-btn.print:hover  { background: #e3edff; color: #1a4a9e; }
+.icon-btn.danger:hover { background: #fde8e8; color: #b71c1c; }
+
+.seccion { padding: 14px 16px; border-bottom: 1px solid #f1f2f6; }
+.seccion:last-child { border-bottom: none; }
+.seccion-title { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; font-weight: 700; color: #8395a7; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+
+.producto-fila { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px dashed #f1f2f6; flex-wrap: wrap; }
+.producto-fila:last-child { border-bottom: none; }
+.prod-nombre { flex: 1 1 55%; font-size: 13px; font-weight: 600; color: #1e272e; min-width: 0; }
+.prod-codigo { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #b2bec3; }
+.prod-cant  { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: #636e72; min-width: 40px; text-align: center; }
+.prod-total { font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; font-weight: 700; color: #1e272e; min-width: 70px; text-align: right; }
+
+.gasto-fila { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #f1f2f6; gap: 8px; }
+.gasto-fila:last-child { border-bottom: none; }
+.gasto-motivo   { font-size: 13px; color: #2d3436; flex: 1; min-width: 0; }
+.gasto-monto    { font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; font-weight: 700; color: #e74c3c; white-space: nowrap; }
+.transfer-monto { font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; font-weight: 700; color: #3c6fe4; white-space: nowrap; }
+
+.chart-wrap { display: flex; align-items: flex-end; gap: 3px; height: 110px; padding: 10px 0 6px; overflow-x: auto; }
+.bar-group { display: flex; flex-direction: column; align-items: center; flex: 1 0 18px; gap: 4px; min-width: 18px; }
+.bar-label { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #8395a7; white-space: nowrap; }
+.bar { width: 100%; border-radius: 4px 4px 0 0; min-height: 4px; transition: height 0.4s cubic-bezier(0.34,1.56,0.64,1); cursor: pointer; position: relative; }
+.bar:hover::after, .bar:active::after { content: attr(data-tip); position: absolute; bottom: 105%; left: 50%; transform: translateX(-50%); background: #1e272e; color: white; font-size: 11px; font-family: 'IBM Plex Mono', monospace; padding: 3px 8px; border-radius: 5px; white-space: nowrap; pointer-events: none; z-index: 5; }
+.bar-ingreso { background: linear-gradient(180deg, #00b894, #00cec9); }
+
+.spinner-wrap { text-align: center; padding: 50px 20px; color: #8395a7; font-size: 14px; }
+.spinner { display: inline-block; width: 28px; height: 28px; border: 3px solid #dfe6e9; border-top-color: #ff3f34; border-radius: 50%; animation: spin 0.7s linear infinite; margin-bottom: 10px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.empty-state { text-align: center; padding: 40px 20px; color: #b2bec3; }
+.empty-icon { font-size: 40px; margin-bottom: 10px; }
+
+.dia-totales { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+.dt-item { background: white; border-radius: 8px; padding: 8px 6px; text-align: center; border: 1px solid #f1f2f6; min-width: 0; }
+.dt-val { font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; font-weight: 700; }
+.dt-lbl { font-size: 9px; color: #8395a7; text-transform: uppercase; margin-top: 2px; }
+
+/* MODAL */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; }
+.modal-overlay.visible { display: flex; }
+.modal-box { background: white; border-radius: 16px; padding: 24px 22px; width: min(420px, 90vw); box-shadow: 0 20px 60px rgba(0,0,0,0.25); animation: slideUp 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+@keyframes slideUp { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.modal-icon  { font-size: 36px; margin-bottom: 12px; }
+.modal-title { font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 700; color: #1e272e; margin-bottom: 8px; }
+.modal-desc  { font-size: 13px; color: #636e72; line-height: 1.6; margin-bottom: 20px; }
+.modal-btns  { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.modal-btns button { flex: 1 1 auto; }
+.btn-cancel  { padding: 11px 20px; border: 1.5px solid #dfe6e9; border-radius: 8px; background: white; color: #636e72; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; min-height: 44px; }
+.btn-cancel:hover { background: #f8f9fa; }
+.btn-confirm { padding: 11px 20px; border: none; border-radius: 8px; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; background: #e74c3c; color: white; min-height: 44px; }
+.btn-confirm:hover { background: #c0392b; }
+.btn-confirm:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.toast { position: fixed; bottom: 28px; right: 28px; background: #2d3436; color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); transform: translateY(80px); opacity: 0; transition: all 0.35s cubic-bezier(0.34,1.56,0.64,1); z-index: 3000; }
+.toast.visible { transform: translateY(0); opacity: 1; }
+
+/* ===== MOBILE: tables in cards, sidebar drawer already handled above ===== */
+@media (max-width: 768px) {
+  table.tabla-mes thead { display: none; }
+  table.tabla-mes, table.tabla-mes tbody, table.tabla-mes tr, table.tabla-mes td { display: block; width: 100%; }
+  table.tabla-mes tr { border: 1px solid #eef0f2; border-radius: 10px; margin-bottom: 8px; padding: 4px 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+  table.tabla-mes tr:hover td { background: transparent; }
+  table.tabla-mes td { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid #f5f6f8; text-align: right; }
+  table.tabla-mes td:last-child { border-bottom: none; }
+  table.tabla-mes td[data-label]::before { content: attr(data-label); font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 700; color: #b2bec3; text-transform: uppercase; letter-spacing: 0.4px; text-align: left; }
+
+  .toast { left: 16px; right: 16px; bottom: 20px; text-align: center; }
+  .dia-fecha { font-size: 12.5px; }
+  .card-title { font-size: 12.5px; }
+}
+
+/* ===== TABLET / DESKTOP: restore static sidebar and original spacing ===== */
+@media (min-width: 769px) {
+  .hamburger, .sidebar-close, .sidebar-overlay { display: none !important; }
+  .sidebar { position: sticky; top: 0; transform: none; width: 220px; max-width: none; height: auto; }
+  .contenido { padding: 24px 28px; }
+  .header { padding: 18px 28px; }
+  .header-icon { font-size: 26px; }
+  .header-title { font-size: 18px; }
+  .header-sub { font-size: 12px; }
+  .fecha-sistema { font-size: 12px; width: auto; order: 0; }
+  .tabs { width: fit-content; margin-bottom: 22px; }
+  .tab { flex: none; padding: 9px 20px; font-size: 14px; }
+  .mes-selector { flex-wrap: nowrap; }
+  .mes-selector select { flex: none; width: auto; padding: 9px 14px; font-size: 14px; }
+  .mes-selector .btn { flex: none; }
+  .btn { min-height: auto; }
+  .card { padding: 20px 24px; margin-bottom: 20px; }
+  .card-title { font-size: 14px; margin-bottom: 16px; }
+  .stats-mes { grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+  .stat-m { padding: 18px 20px; }
+  .stat-m-label { font-size: 11px; }
+  .stat-m-val { font-size: 22px; }
+  .dia-header { gap: 14px; padding: 14px 18px; flex-wrap: nowrap; }
+  .dia-fecha { font-size: 14px; min-width: 100px; }
+  .dia-chips { flex: 1; order: 0; }
+  .dia-toggle { margin-left: 8px; }
+  .dia-acciones { margin-left: 0; }
+  .dia-totales { gap: 8px; }
+  .dt-item { padding: 10px 12px; }
+  .dt-val { font-size: 16px; }
+  .dt-lbl { font-size: 10px; }
+  .chart-wrap { gap: 6px; height: 120px; overflow-x: visible; }
+  .bar-group { flex: 1; min-width: 0; }
+  .bar-label { font-size: 10px; }
+  .modal-box { padding: 28px 30px; }
+  .modal-btns { justify-content: flex-end; }
+  .modal-btns button { flex: none; }
+}
+
+@media print {
+  .sidebar, .tabs, .mes-selector, .btn, .toast, .dia-acciones, .modal-overlay, .hamburger, .sidebar-overlay { display: none !important; }
+  body { display: block; }
+  .main { width: 100%; }
+  .contenido { padding: 0; }
+  .dia-body { display: block !important; }
+  .card { box-shadow: none; border: 1px solid #ddd; }
+}
+</style>
+</head>
+<body>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="cerrarMenu()"></div>
+<div class="sidebar" id="sidebar">
+  <button class="sidebar-close" onclick="cerrarMenu()" aria-label="Cerrar menú">✕</button>
+  <div class="sidebar-brand">ContaNexus</div>
+  <div class="sidebar-sub">Control de Inventario</div>
+  <a href="index.html" class="nav-link active">📅 Historial de Caja</a>
+  <a href="entrada_salida.html" class="nav-link">🔄 Movimientos Inventario</a>
+  <a href="bodega.html" class="nav-link">📦 Bodega</a>
+  <a href="vencimientos.html" class="nav-link">⏳ Vencimientos</a>
+  <a href="cuentas_cobrar.html" class="nav-link">💸 Cuentas por Cobrar</a>
+</div>
+
+<div class="main">
+  <div class="header">
+    <button class="hamburger" onclick="abrirMenu()" aria-label="Abrir menú">☰</button>
+    <div class="header-icon">📅</div>
+    <div>
+      <div class="header-title">HISTORIAL DE CAJA</div>
+      <div class="header-sub">Ventas, gastos y transferencias por día y por mes</div>
+    </div>
+    <div class="fecha-sistema" id="txt-fecha"></div>
+  </div>
+
+  <div class="contenido">
+    <div class="tabs">
+      <button class="tab active" onclick="cambiarTab('dias', this)">📋 Por Día</button>
+      <button class="tab" onclick="cambiarTab('mes', this)">📊 Por Mes</button>
+    </div>
+
+    <!-- TAB: POR DÍA -->
+    <div id="panel-dias" class="panel active">
+      <div class="card">
+        <div class="card-title">
+          <span>📋 Jornadas Registradas</span>
+          <button class="btn btn-dark" style="font-size:13px;padding:7px 14px;" onclick="cargarTodo()">⟳ Actualizar</button>
+        </div>
+        <div id="lista-dias">
+          <div class="spinner-wrap"><div class="spinner"></div><br>Cargando historial...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: POR MES -->
+    <div id="panel-mes" class="panel">
+      <div class="mes-selector">
+        <select id="sel-mes"><option value="">— Selecciona un mes —</option></select>
+        <button class="btn btn-primary" onclick="verMes()">Ver mes</button>
+      </div>
+      <div class="stats-mes" id="stats-mes" style="display:none;">
+        <div class="stat-m ingreso"><div class="stat-m-label">💰 Total Vendido</div><div class="stat-m-val green" id="mes-ingresos">$0.00</div></div>
+        <div class="stat-m transfer"><div class="stat-m-label">🏦 Transferencias</div><div class="stat-m-val blue" id="mes-transfer">$0.00</div></div>
+        <div class="stat-m gasto"><div class="stat-m-label">📤 Total Gastos</div><div class="stat-m-val red" id="mes-gastos">$0.00</div></div>
+        <div class="stat-m neto"><div class="stat-m-label">✅ Neto del Mes</div><div class="stat-m-val accent" id="mes-neto">$0.00</div></div>
+      </div>
+      <div class="card" id="card-chart" style="display:none;">
+        <div class="card-title"><span>📈 Ventas por Día del Mes</span></div>
+        <div class="chart-wrap" id="chart-dias"></div>
+      </div>
+      <div class="card" id="card-prods-mes" style="display:none;">
+        <div class="card-title"><span>🏆 Productos Vendidos en el Mes</span><span id="mes-label-prods" style="font-size:12px;color:#8395a7;font-weight:400;"></span></div>
+        <div class="tabla-wrap">
+          <table class="tabla-mes">
+            <thead><tr><th>#</th><th>Producto</th><th class="text-center">Unidades</th><th class="text-right">Total Recaudado</th></tr></thead>
+            <tbody id="tabla-prods-mes"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" id="card-gastos-mes" style="display:none;">
+        <div class="card-title"><span>📤 Gastos del Mes</span></div>
+        <div class="tabla-wrap">
+          <table class="tabla-mes">
+            <thead><tr><th>Fecha</th><th>Motivo</th><th class="text-right">Monto</th></tr></thead>
+            <tbody id="tabla-gastos-mes"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="mes-empty" class="empty-state" style="display:none;">
+        <div class="empty-icon">📭</div><p>No hay datos para el mes seleccionado</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-icon" id="modal-icon">🗑️</div>
+    <div class="modal-title" id="modal-title">Confirmar acción</div>
+    <div class="modal-desc"  id="modal-desc">¿Estás seguro?</div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-confirm" id="modal-btn-confirm" onclick="ejecutarModal()">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+  ? 'http://localhost:3000'
+  : 'https://agronaranjito-1.onrender.com';
+
+document.getElementById('txt-fecha').textContent =
+  new Date().toLocaleDateString('es-EC', { day:'2-digit', month:'2-digit', year:'numeric' });
+
+// ── ESTADO ────────────────────────────────────────────────────────
+let todasVentas   = [];
+let historialCaja = [];
+let _accionModal  = null;
+
+// ── MENÚ MÓVIL ────────────────────────────────────────────────────
+function abrirMenu() {
+  document.getElementById('sidebar').classList.add('activo');
+  document.getElementById('sidebarOverlay').classList.add('activo');
+  document.body.style.overflow = 'hidden';
+}
+function cerrarMenu() {
+  document.getElementById('sidebar').classList.remove('activo');
+  document.getElementById('sidebarOverlay').classList.remove('activo');
+  document.body.style.overflow = '';
+}
+
+// ── MODAL ─────────────────────────────────────────────────────────
+function abrirModal({ icon, titulo, desc, labelBtn, fn }) {
+  document.getElementById('modal-icon').textContent  = icon  || '🗑️';
+  document.getElementById('modal-title').textContent = titulo || 'Confirmar';
+  document.getElementById('modal-desc').textContent  = desc   || '';
+  const btn = document.getElementById('modal-btn-confirm');
+  btn.textContent = labelBtn || 'Eliminar';
+  btn.disabled    = false;
+  _accionModal    = fn;
+  document.getElementById('modal-overlay').classList.add('visible');
+}
+function cerrarModal() {
+  document.getElementById('modal-overlay').classList.remove('visible');
+  _accionModal = null;
+}
+async function ejecutarModal() {
+  if (!_accionModal) return;
+  const btn = document.getElementById('modal-btn-confirm');
+  btn.disabled    = true;
+  btn.textContent = 'Eliminando…';
+  try { await _accionModal(); } finally { cerrarModal(); }
+}
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay')) cerrarModal();
+});
+
+// ── TABS ──────────────────────────────────────────────────────────
+function cambiarTab(id, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+  el.classList.add('active');
+}
+
+// ── CARGA ─────────────────────────────────────────────────────────
+async function cargarTodo() {
+  document.getElementById('lista-dias').innerHTML =
+    '<div class="spinner-wrap"><div class="spinner"></div><br>Cargando historial...</div>';
+  try {
+    const [historial, analisis] = await Promise.all([
+      fetch(API + '/caja/historial').then(r => r.json()),
+      fetch(API + '/analisis').then(r => r.json())
+    ]);
+    todasVentas   = Array.isArray(analisis.ventas) ? analisis.ventas : [];
+    historialCaja = Array.isArray(historial)        ? historial       : [];
+    renderDias();
+    poblarSelectMes();
+    mostrarToast('✅ Historial sincronizado');
+  } catch (e) {
+    document.getElementById('lista-dias').innerHTML =
+      '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Error al conectar: ' + e.message + '</p></div>';
+  }
+}
+
+// ── AGRUPAR VENTAS POR DÍA ────────────────────────────────────────
+function agruparPorDia(ventas) {
+  const map = {};
+  ventas.forEach(v => {
+    const dia = (v.fecha || '').split('T')[0];
+    if (!dia) return;
+    if (!map[dia]) map[dia] = [];
+    map[dia].push(v);
+  });
+  return map;
+}
+
+// ── RENDER DÍAS ───────────────────────────────────────────────────
+function renderDias() {
+  const cont       = document.getElementById('lista-dias');
+  const porDia     = agruparPorDia(todasVentas);
+  const fechasCaja = new Set(historialCaja.map(c => (c.fechaApertura || '').split('T')[0]));
+  const todasFechas = [...new Set([...Object.keys(porDia), ...fechasCaja])]
+    .filter(Boolean).sort((a, b) => b.localeCompare(a));
+
+  if (!todasFechas.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>Sin registros de caja aún</p></div>';
+    return;
+  }
+
+  cont.innerHTML = todasFechas.map(dia => {
+    const ventasDelDia   = porDia[dia] || [];
+    const cajaDelDia     = historialCaja.find(c => (c.fechaApertura || '').split('T')[0] === dia);
+    const gastosDelDia   = cajaDelDia ? (cajaDelDia.gastosLista        || []) : [];
+    const transfersDia   = cajaDelDia ? (cajaDelDia.transferenciasList || []) : [];
+
+    let totalEfectivo = 0, totalCredito = 0, totalTransferVentas = 0;
+    const prodMap = {};
+
+    ventasDelDia.forEach(v => {
+      const m = Number(v.total || 0);
+      if      (v.tipo === 'credito')       totalCredito        += m;
+      else if (v.tipo === 'transferencia') totalTransferVentas += m;
+      else                                 totalEfectivo       += m;
+
+      (v.productos || []).forEach(p => {
+        const k = p.nombre || 'Sin nombre';
+        if (!prodMap[k]) prodMap[k] = { nombre: k, codigo: p.codigo || '-', cantidad: 0, total: 0 };
+        const cant = Number(p.amount || p.cantidad || 1);
+        prodMap[k].cantidad += cant;
+        prodMap[k].total    += Number(p.precio || 0) * cant;
+      });
+    });
+
+    const totalVentas  = totalEfectivo + totalTransferVentas + totalCredito;
+    const totalGastos  = gastosDelDia.reduce((s, g) => s + Number(g.monto || 0), 0);
+    const totalTransf  = transfersDia.reduce((s, t) => s + Number(t.monto || 0), 0);
+    const neto         = totalVentas - totalGastos;
+    const productos    = Object.values(prodMap).sort((a, b) => b.total - a.total);
+
+    // ── Para borrar necesitamos la fecha exacta del día
+    // El backend DELETE /ventas/dia usa la fecha YYYY-MM-DD en zona UTC.
+    // Ajustamos al mediodía local para no perder el día por diferencia horaria.
+    const fechaParaBorrar = dia; // YYYY-MM-DD
+
+    return `
+    <div class="dia-row" id="dia-${dia}">
+      <div class="dia-header">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;cursor:pointer;flex:1;" onclick="toggleDia('${dia}')">
+          <div class="dia-fecha">📅 ${formatFecha(dia)}</div>
+        </div>
+        <div class="dia-acciones">
+          <button class="icon-btn print" title="Imprimir ventas del día"
+            onclick="event.stopPropagation(); imprimirDia('${dia}')">🖨️</button>
+          <button class="icon-btn danger" title="Borrar todo el historial de este día"
+            onclick="event.stopPropagation(); pedirBorrarDia('${fechaParaBorrar}')">🗑️</button>
+        </div>
+        <span class="dia-toggle" onclick="toggleDia('${dia}')">▾</span>
+        <div class="dia-chips" onclick="toggleDia('${dia}')">
+          ${totalVentas > 0 ? `<span class="dia-chip chip-ventas">💰 $${totalVentas.toFixed(2)} vendido</span>` : ''}
+          ${ventasDelDia.length > 0 ? `<span class="dia-chip chip-ventas">${ventasDelDia.length} venta${ventasDelDia.length !== 1 ? 's' : ''}</span>` : ''}
+          ${totalGastos > 0 ? `<span class="dia-chip chip-gastos">📤 $${totalGastos.toFixed(2)} gastos</span>` : ''}
+          ${totalTransf  > 0 ? `<span class="dia-chip chip-transfer">🏦 $${totalTransf.toFixed(2)} transf.</span>` : ''}
+          <span class="dia-chip chip-neto">Neto $${neto.toFixed(2)}</span>
+        </div>
+      </div>
+
+      <div class="dia-body">
+        <!-- Resumen -->
+        <div class="seccion">
+          <div class="seccion-title">Resumen del día</div>
+          <div class="dia-totales">
+            <div class="dt-item"><div class="dt-val" style="color:#00b894;">$${totalEfectivo.toFixed(2)}</div><div class="dt-lbl">💵 Efectivo</div></div>
+            <div class="dt-item"><div class="dt-val" style="color:#3c6fe4;">$${totalTransferVentas.toFixed(2)}</div><div class="dt-lbl">🏦 Transferencia</div></div>
+            <div class="dt-item"><div class="dt-val" style="color:#e67e22;">$${totalCredito.toFixed(2)}</div><div class="dt-lbl">💳 Crédito</div></div>
+          </div>
+        </div>
+
+        ${productos.length > 0 ? `
+        <div class="seccion">
+          <div class="seccion-title">🛒 Productos vendidos (${productos.length} ítems)</div>
+          ${productos.map(p => `
+            <div class="producto-fila">
+              <div><div class="prod-nombre">${p.nombre}</div><div class="prod-codigo">${p.codigo}</div></div>
+              <div class="prod-cant">${p.cantidad} u</div>
+              <div class="prod-total">$${p.total.toFixed(2)}</div>
+            </div>`).join('')}
+          <div style="text-align:right;margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:#8395a7;">
+            Total: <strong style="color:#1e272e;font-size:15px;">$${totalVentas.toFixed(2)}</strong>
+          </div>
+        </div>` : ''}
+
+        ${gastosDelDia.length > 0 ? `
+        <div class="seccion">
+          <div class="seccion-title">📤 Gastos del día</div>
+          ${gastosDelDia.map(g => `
+            <div class="gasto-fila">
+              <span class="gasto-motivo">${g.motivo || 'Gasto'}</span>
+              <span class="gasto-monto">-$${Number(g.monto).toFixed(2)}</span>
+            </div>`).join('')}
+          <div style="text-align:right;margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:#8395a7;">
+            Total gastos: <strong style="color:#e74c3c;">$${totalGastos.toFixed(2)}</strong>
+          </div>
+        </div>` : ''}
+
+        ${transfersDia.length > 0 ? `
+        <div class="seccion">
+          <div class="seccion-title">🏦 Transferencias recibidas</div>
+          ${transfersDia.map(t => `
+            <div class="gasto-fila">
+              <div>
+                <span class="gasto-motivo">${t.banco || 'Banco'}${t.comprobante ? ' — Ref: ' + t.comprobante : ''}</span>
+                ${t.remitente ? `<div style="font-size:12px;color:#8395a7;margin-top:2px;">Remitente: ${t.remitente}</div>` : ''}
+              </div>
+              <span class="transfer-monto">+$${Number(t.monto).toFixed(2)}</span>
+            </div>`).join('')}
+        </div>` : ''}
+
+        ${productos.length === 0 && gastosDelDia.length === 0 && transfersDia.length === 0 ? `
+        <div class="seccion" style="text-align:center;color:#b2bec3;padding:24px;">
+          Sin movimientos detallados para este día
+        </div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleDia(dia) {
+  document.getElementById('dia-' + dia).classList.toggle('open');
+}
+
+// ── BORRAR DÍA COMPLETO ───────────────────────────────────────────
+// Usa DELETE /ventas/dia que SÍ existe en el backend.
+// La caja histórica no tiene endpoint de borrado, pero las ventas sí se eliminan.
+function pedirBorrarDia(dia) {
+  abrirModal({
+    icon:     '🗑️',
+    titulo:   'Borrar historial del ' + formatFecha(dia),
+    desc:     'Se eliminarán todas las ventas registradas el ' + formatFecha(dia) + '. Los gastos y transferencias de caja quedarán en el historial de Firestore pero sin ventas asociadas. Esta acción no se puede deshacer.',
+    labelBtn: 'Sí, borrar ventas',
+    fn:       () => ejecutarBorrarDia(dia)
+  });
+}
+
+async function ejecutarBorrarDia(dia) {
+  try {
+    // 1. Borrar ventas del día (endpoint existente)
+    const r = await fetch(`${API}/ventas/dia`, {
+      method:  'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ fecha: dia })
+    });
+
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      throw new Error(data.error || 'Error ' + r.status);
+    }
+
+    const data = await r.json();
+    const borradas = data.deleted || 0;
+
+    mostrarToast(`🗑️ ${borradas} venta(s) del ${formatFecha(dia)} eliminadas`);
+    await cargarTodo();
+  } catch (e) {
+    mostrarToast('⚠️ Error: ' + e.message);
+  }
+}
+
+// ── IMPRIMIR DÍA ──────────────────────────────────────────────────
+function imprimirDia(dia) {
+  const porDia      = agruparPorDia(todasVentas);
+  const ventasDia   = porDia[dia] || [];
+  const prodMap     = {};
+  let ef = 0, cr = 0, tr = 0;
+
+  ventasDia.forEach(v => {
+    const m = Number(v.total || 0);
+    if      (v.tipo === 'credito')       cr += m;
+    else if (v.tipo === 'transferencia') tr += m;
+    else                                 ef += m;
+    (v.productos || []).forEach(p => {
+      const k = p.nombre || 'Sin nombre';
+      if (!prodMap[k]) prodMap[k] = { nombre: k, codigo: p.codigo || '-', cantidad: 0, precio: Number(p.precio || 0), total: 0 };
+      const cant = Number(p.amount || p.cantidad || 1);
+      prodMap[k].cantidad += cant;
+      prodMap[k].total    += Number(p.precio || 0) * cant;
+    });
+  });
+
+  const prods   = Object.values(prodMap).sort((a, b) => b.total - a.total);
+  const total   = ef + cr + tr;
+  const fecha   = formatFecha(dia);
+  const filas   = prods.length
+    ? prods.map((p, i) => `<tr><td>${i+1}</td><td>${p.nombre}</td><td style="color:#888;font-size:11px">${p.codigo}</td><td style="text-align:center">${p.cantidad}</td><td style="text-align:right">$${p.precio.toFixed(2)}</td><td style="text-align:right;font-weight:700">$${p.total.toFixed(2)}</td></tr>`).join('')
+    : `<tr><td colspan="6" style="text-align:center;color:#999;padding:20px">Sin ventas este día</td></tr>`;
+
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Ventas ${fecha}</title>
+  <style>*{box-sizing:border-box}body{font-family:Arial,sans-serif;padding:28px;color:#1e272e}h1{font-size:18px;margin-bottom:2px}.sub{color:#777;font-size:12px;margin-bottom:18px}table{width:100%;border-collapse:collapse;margin-top:10px}th{text-align:left;font-size:11px;text-transform:uppercase;color:#555;border-bottom:2px solid #ccc;padding:8px 6px}td{padding:7px 6px;border-bottom:1px solid #eee;font-size:13px}.resumen{margin-top:22px;display:flex;gap:20px;flex-wrap:wrap}.box{border:1px solid #ddd;border-radius:8px;padding:10px 16px;min-width:130px}.box .lbl{font-size:10px;text-transform:uppercase;color:#888}.box .val{font-size:16px;font-weight:700;margin-top:2px}.total-final{margin-top:18px;text-align:right;font-size:16px;font-weight:700;border-top:2px solid #1e272e;padding-top:10px}</style>
+  </head><body>
+  <h1>🧾 Ventas del día — ${fecha}</h1>
+  <div class="sub">Reporte generado el ${new Date().toLocaleString('es-EC')}</div>
+  <table><thead><tr><th>#</th><th>Producto</th><th>Código</th><th>Cant.</th><th>Precio</th><th>Total</th></tr></thead><tbody>${filas}</tbody></table>
+  <div class="resumen">
+    <div class="box"><div class="lbl">💵 Efectivo</div><div class="val">$${ef.toFixed(2)}</div></div>
+    <div class="box"><div class="lbl">🏦 Transferencia</div><div class="val">$${tr.toFixed(2)}</div></div>
+    <div class="box"><div class="lbl">💳 Crédito</div><div class="val">$${cr.toFixed(2)}</div></div>
+  </div>
+  <div class="total-final">Total vendido: $${total.toFixed(2)}</div>
+  </body></html>`;
+
+  const w = window.open('', '_blank', 'width=860,height=900');
+  if (!w) { mostrarToast('⚠️ El navegador bloqueó la ventana de impresión'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+  w.onload = () => { w.focus(); w.print(); };
+}
+
+// ── PANEL MES ─────────────────────────────────────────────────────
+function poblarSelectMes() {
+  const meses = new Set();
+  todasVentas.forEach(v => { const m = (v.fecha||'').slice(0,7); if(m) meses.add(m); });
+  historialCaja.forEach(c => { const m = (c.fechaApertura||'').slice(0,7); if(m) meses.add(m); });
+  const sorted = [...meses].sort((a,b) => b.localeCompare(a));
+  const sel = document.getElementById('sel-mes');
+  sel.innerHTML = '<option value="">— Selecciona un mes —</option>' +
+    sorted.map(m => `<option value="${m}">${nombreMes(m)}</option>`).join('');
+}
+
+function verMes() {
+  const mes = document.getElementById('sel-mes').value;
+  if (!mes) return mostrarToast('⚠️ Selecciona un mes primero');
+
+  const ventasMes = todasVentas.filter(v => (v.fecha||'').startsWith(mes));
+  const cajasMes  = historialCaja.filter(c => (c.fechaApertura||'').startsWith(mes));
+
+  let ingresos = 0, gastos = 0, transferencias = 0;
+  ventasMes.forEach(v => {
+    const t = Number(v.total||0);
+    ingresos += t;
+    if (v.tipo === 'transferencia') transferencias += t;
+  });
+  cajasMes.forEach(c => { (c.gastosLista||[]).forEach(g => gastos += Number(g.monto||0)); });
+
+  document.getElementById('stats-mes').style.display = 'grid';
+  document.getElementById('mes-ingresos').textContent = '$' + ingresos.toFixed(2);
+  document.getElementById('mes-transfer').textContent = '$' + transferencias.toFixed(2);
+  document.getElementById('mes-gastos').textContent   = '$' + gastos.toFixed(2);
+  document.getElementById('mes-neto').textContent     = '$' + (ingresos - gastos).toFixed(2);
+
+  // Productos del mes
+  const prodMap = {};
+  ventasMes.forEach(v => {
+    (v.productos||[]).forEach(p => {
+      const k = p.nombre || 'Sin nombre';
+      if (!prodMap[k]) prodMap[k] = { nombre: k, cantidad: 0, total: 0 };
+      const cant = Number(p.amount||p.cantidad||1);
+      prodMap[k].cantidad += cant;
+      prodMap[k].total    += Number(p.precio||0) * cant;
+    });
+  });
+  const prods = Object.values(prodMap).sort((a,b) => b.total - a.total);
+  if (prods.length > 0) {
+    document.getElementById('card-prods-mes').style.display = 'block';
+    document.getElementById('mes-label-prods').textContent = nombreMes(mes);
+    document.getElementById('tabla-prods-mes').innerHTML = prods.map((p,i) =>
+      `<tr><td data-label="#" class="mono" style="color:#b2bec3">${i+1}</td><td data-label="Producto" style="font-weight:600">${p.nombre}</td><td data-label="Unidades" class="mono text-center">${p.cantidad} u</td><td data-label="Total" class="mono text-right fw7">$${p.total.toFixed(2)}</td></tr>`
+    ).join('');
+  } else {
+    document.getElementById('card-prods-mes').style.display = 'none';
+  }
+
+  // Gastos del mes (solo lectura, sin botón borrar)
+  const todosGastos = [];
+  cajasMes.forEach(c => {
+    const dia = (c.fechaApertura||'').split('T')[0];
+    (c.gastosLista||[]).forEach(g => todosGastos.push({ ...g, dia }));
+  });
+  if (todosGastos.length > 0) {
+    document.getElementById('card-gastos-mes').style.display = 'block';
+    document.getElementById('tabla-gastos-mes').innerHTML = todosGastos.map(g => `
+      <tr>
+        <td data-label="Fecha" class="mono" style="color:#b2bec3">${formatFecha(g.dia||'')}</td>
+        <td data-label="Motivo">${g.motivo || 'Gasto'}</td>
+        <td data-label="Monto" class="mono text-right fw7" style="color:#e74c3c">-$${Number(g.monto||0).toFixed(2)}</td>
+      </tr>`).join('');
+  } else {
+    document.getElementById('card-gastos-mes').style.display = 'none';
+  }
+
+  // Gráfico
+  const porDia = {};
+  ventasMes.forEach(v => {
+    const d = (v.fecha||'').split('T')[0]; if(!d) return;
+    porDia[d] = (porDia[d]||0) + Number(v.total||0);
+  });
+  const dias   = Object.keys(porDia).sort();
+  const maxVal = Math.max(...Object.values(porDia), 1);
+  document.getElementById('card-chart').style.display = 'block';
+  document.getElementById('chart-dias').innerHTML = dias.map(d => {
+    const val = porDia[d];
+    const pct = Math.round((val / maxVal) * 100);
+    return `<div class="bar-group"><div class="bar bar-ingreso" style="height:${pct}%" data-tip="$${val.toFixed(2)}"></div><div class="bar-label">${parseInt(d.split('-')[2])}</div></div>`;
+  }).join('');
+
+  document.getElementById('mes-empty').style.display =
+    (ventasMes.length === 0 && cajasMes.length === 0) ? 'block' : 'none';
+}
+
+// ── UTILIDADES ────────────────────────────────────────────────────
+function formatFecha(iso) {
+  if (!iso) return '—';
+  const [y, m, d] = iso.split('-');
+  const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  return `${parseInt(d)} ${meses[parseInt(m)-1]} ${y}`;
+}
+function nombreMes(ym) {
+  if (!ym) return ym;
+  const [y, m] = ym.split('-');
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  return `${meses[parseInt(m)-1]} ${y}`;
+}
+function mostrarToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('visible');
+  setTimeout(() => t.classList.remove('visible'), 3200);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+cargarTodo();
+</script>
+</body>
+</html>
