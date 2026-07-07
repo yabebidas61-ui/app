@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#1e272e">
 <title>ContaNexus — Cheques por Pagar</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { -webkit-text-size-adjust: 100%; }
@@ -176,7 +177,7 @@ textarea.notas-mes:focus { border-color: #ff3f34; }
   <a href="bodega.html" class="nav-link">📦 Bodega</a>
   <a href="vencimientos.html" class="nav-link">⏳ Vencimientos</a>
   <a href="cuentas_cobrar.html" class="nav-link">💸 Cuentas por Cobrar</a>
-  <a href="calendario.html" class="nav-link active">🧾 Cheques por Pagar</a>
+  <a href="cheques.html" class="nav-link active">🧾 Cheques por Pagar</a>
 </div>
 
 <div class="main">
@@ -223,15 +224,46 @@ textarea.notas-mes:focus { border-color: #ff3f34; }
 
       <div class="col-side">
         <div class="card">
-          <div class="card-title"><span>💾 Guardado</span></div>
-          <div class="estado-archivo desconectado" id="estado-archivo">📌 Guardando en este navegador (localStorage)</div>
-          <div style="font-size:12.5px;color:#8395a7;margin-bottom:12px;line-height:1.5;">
-            Tus cheques ya se guardan automáticamente en este navegador. Para que <strong>nunca se pierdan aunque borres el caché</strong>, conecta un archivo real en tu computadora — cada cambio se guardará ahí también, al instante.
+          <div class="card-title"><span>🌐 Sincronización en la nube (Google Sheets)</span></div>
+          <div class="estado-archivo desconectado" id="estado-sheets">📌 No conectado — cada PC ve solo lo suyo</div>
+          <div style="font-size:12.5px;color:#8395a7;margin-bottom:10px;line-height:1.5;">
+            Conecta la app a una Google Sheet para que <strong>todas las PCs vean los mismos cheques</strong> casi en tiempo real. Necesitas la URL de un "Web App" de Google Apps Script (instrucciones abajo, se hace una sola vez).
+          </div>
+          <div class="form-group" style="margin-bottom:8px;">
+            <input class="form-input" id="input-sheets-url" placeholder="https://script.google.com/macros/s/AB.../exec" style="font-size:12px;">
           </div>
           <div style="display:flex;flex-direction:column;gap:8px;">
-            <button class="btn btn-dark" id="btn-conectar-archivo" onclick="conectarArchivo()">🔗 Guardar en un archivo de mi PC</button>
-            <button class="btn btn-light" onclick="descargarRespaldo()">⬇️ Descargar respaldo (.json)</button>
-            <button class="btn btn-light" onclick="document.getElementById('input-restaurar').click()">⬆️ Restaurar desde respaldo</button>
+            <button class="btn btn-dark" onclick="conectarGoogleSheets()">🔗 Conectar Google Sheets</button>
+            <button class="btn btn-light" id="btn-sync-ahora" onclick="sincronizarConSheets({empujarCambiosLocales:true})" style="display:none;font-size:12.5px;">🔄 Sincronizar ahora</button>
+            <button class="btn btn-light" id="btn-desconectar-sheets" onclick="desconectarGoogleSheets()" style="display:none;font-size:12px;color:#b71c1c;">❌ Desconectar</button>
+          </div>
+          <div style="font-size:11px;color:#b2bec3;margin-top:8px;" id="sheets-ultima-sync"></div>
+          <details style="margin-top:10px;font-size:12px;color:#636e72;">
+            <summary style="cursor:pointer;font-weight:600;">¿Cómo consigo esa URL?</summary>
+            <ol style="margin:8px 0 0 18px;line-height:1.7;">
+              <li>Crea una Google Sheet nueva con dos pestañas: <strong>Cheques</strong> y <strong>Notas</strong>.</li>
+              <li>Menú <strong>Extensiones → Apps Script</strong>, borra el código de ejemplo y pega el que te compartí.</li>
+              <li><strong>Implementar → Nueva implementación</strong> → tipo "Aplicación web".</li>
+              <li>"Ejecutar como": tú. "Quién tiene acceso": <strong>Cualquier usuario</strong>.</li>
+              <li>Implementa, autoriza el acceso, y copia la URL que termina en <code>/exec</code>. Pégala arriba.</li>
+            </ol>
+          </details>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span>💾 Base de datos (Excel)</span></div>
+          <div class="estado-archivo desconectado" id="estado-archivo">📌 Guardando solo en este navegador (localStorage)</div>
+          <div style="font-size:12.5px;color:#8395a7;margin-bottom:10px;line-height:1.5;">
+            Conecta un archivo Excel para que sea tu <strong>base de datos real</strong>: cada cheque que registres aquí (fecha de pago, proveedor, monto) se guarda automáticamente en ese Excel, y si el Excel ya tiene cheques guardados, se cargan aquí al conectar.
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <button class="btn btn-dark" id="btn-conectar-archivo" onclick="conectarArchivo()">🔗 Conectar / crear Excel como base de datos</button>
+            <button class="btn btn-light" id="btn-releer-archivo" onclick="releerArchivoConectado()" style="display:none;font-size:12.5px;">🔄 Releer cheques desde el Excel conectado</button>
+            <button class="btn btn-green" onclick="descargarExcel()">📊 Exportar copia a Excel</button>
+            <button class="btn btn-primary" onclick="document.getElementById('input-excel').click()">📥 Importar desde un Excel (una vez)</button>
+            <input type="file" id="input-excel" accept=".xlsx,.xls" style="display:none;" onchange="importarExcel(event)">
+            <button class="btn btn-light" onclick="descargarRespaldo()" style="font-size:12px;">⬇️ Respaldo .json (avanzado)</button>
+            <button class="btn btn-light" onclick="document.getElementById('input-restaurar').click()" style="font-size:12px;">⬆️ Restaurar .json (avanzado)</button>
             <input type="file" id="input-restaurar" accept=".json" style="display:none;" onchange="restaurarRespaldo(event)">
           </div>
         </div>
@@ -323,7 +355,13 @@ let vistaAno = hoy.getFullYear();
 let vistaMes = hoy.getMonth();
 let diaSeleccionado = null;
 let _accionConfirm = null;
-let fileHandle = null; // FileSystemFileHandle conectado (si el navegador lo soporta)
+let fileHandle = null; // FileSystemFileHandle conectado (si el navegador lo soporta) — este archivo es la "base de datos"
+
+// ── GOOGLE SHEETS (sincronización multi-PC) ───────────────────────
+const SHEETS_URL_KEY = 'contanexus_cheques_sheets_url';
+let sheetsUrl = localStorage.getItem(SHEETS_URL_KEY) || '';
+let sheetsPollTimer = null;
+let sheetsSincronizando = false;
 
 document.getElementById('txt-fecha').textContent =
   hoy.toLocaleDateString('es-EC', { day:'2-digit', month:'2-digit', year:'numeric' });
@@ -331,7 +369,7 @@ document.getElementById('txt-fecha').textContent =
 function claveMes(a,m) { return a + '-' + String(m+1).padStart(2,'0'); }
 function hoyISO() { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 
-// ── GUARDADO (localStorage siempre + archivo real si está conectado) ──
+// ── GUARDADO (localStorage siempre + archivo Excel real si está conectado) ──
 function estadoActual() { return { cheques, notas }; }
 
 function guardarLocal() {
@@ -342,18 +380,21 @@ function guardarLocal() {
 async function guardarEnArchivo() {
   if (!fileHandle) return;
   try {
+    const wb = construirLibroExcel();
+    const arrayBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const writable = await fileHandle.createWritable();
-    await writable.write(JSON.stringify(estadoActual(), null, 2));
+    await writable.write(arrayBuffer);
     await writable.close();
   } catch (e) {
     console.warn('No se pudo guardar en el archivo conectado:', e);
-    mostrarToast('⚠️ No se pudo guardar en el archivo conectado');
+    mostrarToast('⚠️ No se pudo guardar en el Excel conectado');
   }
 }
 
 function guardarTodo() {
   guardarLocal();
   guardarEnArchivo();
+  if (sheetsUrl) sincronizarConSheets({ empujarCambiosLocales: true });
 }
 function guardarCheques() { guardarTodo(); }
 function guardarNotas() {
@@ -361,7 +402,177 @@ function guardarNotas() {
   guardarTodo();
 }
 
-// ── CONECTAR ARCHIVO REAL EN EL PC (File System Access API) ──────
+// ── FILAS EXCEL <-> CHEQUES (compartido entre importar / conectar / releer) ──
+function filasAChequesYNotas(wb) {
+  const hojaCheques = wb.Sheets['Cheques'];
+  const hojaNotas    = wb.Sheets['Notas'];
+  const filasCheques = hojaCheques ? XLSX.utils.sheet_to_json(hojaCheques) : [];
+  const filasNotas    = hojaNotas ? XLSX.utils.sheet_to_json(hojaNotas) : [];
+
+  const chequesNuevos = filasCheques
+    .filter(f => f.Beneficiario && f.Monto !== undefined && f.Monto !== '')
+    .map(f => ({
+      id: f.ID || ('ch_'+Date.now()+'_'+Math.random().toString(36).slice(2,7)),
+      beneficiario: String(f.Beneficiario),
+      monto: Number(f.Monto),
+      fecha: normalizarFechaExcel(f['Fecha de pago']),
+      numero: f['Número de cheque'] ? String(f['Número de cheque']) : '',
+      notas: f.Notas ? String(f.Notas) : '',
+      pagado: String(f.Pagado).trim().toLowerCase() === 'sí' || String(f.Pagado).trim().toLowerCase() === 'si',
+      fechaPago: f['Fecha en que se pagó'] ? normalizarFechaExcel(f['Fecha en que se pagó']) : null
+    }));
+
+  const notasNuevas = {};
+  filasNotas.forEach(f => { if (f.Mes) notasNuevas[String(f.Mes)] = f.Notas || ''; });
+
+  return { chequesNuevos, notasNuevas };
+}
+
+// Lee el contenido actual de un handle de archivo y, si tiene cheques,
+// los carga como estado de la app (el Excel manda). Devuelve true si cargó algo.
+async function cargarDesdeHandle(handle, { preguntarSiHayDatosLocales = false, silencioso = false } = {}) {
+  try {
+    const file = await handle.getFile();
+    if (file.size === 0) return false;
+    const buffer = await file.arrayBuffer();
+    const wb = XLSX.read(buffer, { type: 'array' });
+    const { chequesNuevos, notasNuevas } = filasAChequesYNotas(wb);
+    if (!chequesNuevos.length && !Object.keys(notasNuevas).length) return false;
+
+    if (preguntarSiHayDatosLocales && cheques.length) {
+      const usar = confirm(
+        `Este Excel ya tiene ${chequesNuevos.length} cheque(s) guardados, y este navegador tiene ${cheques.length}.\n\n` +
+        `Aceptar = usar los datos del Excel (recomendado, el Excel es la base de datos).\n` +
+        `Cancelar = mantener lo que hay en este navegador y sobrescribir el Excel con eso.`
+      );
+      if (!usar) return false;
+    }
+
+    cheques = chequesNuevos;
+    notas = notasNuevas;
+    guardarLocal();
+    if (!silencioso) mostrarToast('✅ Cheques cargados desde el Excel conectado');
+    return true;
+  } catch (e) {
+    console.warn('No se pudo leer el archivo conectado:', e);
+    return false;
+  }
+}
+
+// ── SINCRONIZACIÓN CON GOOGLE SHEETS ──────────────────────────────
+function actualizarEstadoSheetsUI(conectado) {
+  const el = document.getElementById('estado-sheets');
+  const btnSync = document.getElementById('btn-sync-ahora');
+  const btnDesc = document.getElementById('btn-desconectar-sheets');
+  if (conectado) {
+    el.className = 'estado-archivo conectado';
+    el.textContent = '✅ Sincronizado con Google Sheets — todas las PCs ven lo mismo';
+    document.getElementById('input-sheets-url').value = sheetsUrl;
+    btnSync.style.display = 'block';
+    btnDesc.style.display = 'block';
+  } else {
+    el.className = 'estado-archivo desconectado';
+    el.textContent = '📌 No conectado — cada PC ve solo lo suyo';
+    btnSync.style.display = 'none';
+    btnDesc.style.display = 'none';
+  }
+}
+
+async function conectarGoogleSheets() {
+  const url = document.getElementById('input-sheets-url').value.trim();
+  if (!url) { mostrarToast('⚠️ Pega la URL del Web App primero'); return; }
+  mostrarToast('🔄 Probando conexión...');
+  try {
+    const res = await fetch(url + '?t=' + Date.now());
+    if (!res.ok) throw new Error('respuesta no ok');
+    const data = await res.json();
+    sheetsUrl = url;
+    localStorage.setItem(SHEETS_URL_KEY, url);
+    await fusionarRemoto(data);
+    await empujarASheets(); // deja el sheet sincronizado con el resultado fusionado
+    iniciarPolling();
+    actualizarEstadoSheetsUI(true);
+    marcarUltimaSync();
+    mostrarToast('🌐 Conectado — sincronizando con todas las PCs');
+    render();
+  } catch (e) {
+    console.warn(e);
+    mostrarToast('⚠️ No se pudo conectar. Revisa la URL y que el Web App esté publicado como "Cualquier usuario"');
+  }
+}
+
+function desconectarGoogleSheets() {
+  sheetsUrl = '';
+  localStorage.removeItem(SHEETS_URL_KEY);
+  if (sheetsPollTimer) clearInterval(sheetsPollTimer);
+  actualizarEstadoSheetsUI(false);
+  mostrarToast('🔌 Desconectado de Google Sheets');
+}
+
+function iniciarPolling() {
+  if (sheetsPollTimer) clearInterval(sheetsPollTimer);
+  sheetsPollTimer = setInterval(() => sincronizarConSheets(), 20000);
+  window.addEventListener('focus', () => sincronizarConSheets());
+}
+
+function marcarUltimaSync() {
+  const el = document.getElementById('sheets-ultima-sync');
+  if (el) el.textContent = 'Última sincronización: ' + new Date().toLocaleTimeString('es-EC');
+}
+
+async function sincronizarConSheets({ empujarCambiosLocales = false } = {}) {
+  if (!sheetsUrl || sheetsSincronizando) return;
+  sheetsSincronizando = true;
+  try {
+    const res = await fetch(sheetsUrl + '?t=' + Date.now());
+    const data = await res.json();
+    await fusionarRemoto(data);
+    if (empujarCambiosLocales) await empujarASheets();
+    marcarUltimaSync();
+    render();
+  } catch (e) {
+    console.warn('Error sincronizando con Sheets:', e);
+  } finally {
+    sheetsSincronizando = false;
+  }
+}
+
+// Combina lo que viene del Sheet con lo que hay en este navegador,
+// quedándose con la versión más reciente de cada cheque (por id).
+async function fusionarRemoto(data) {
+  const remotos = data.cheques || [];
+  const mapa = {};
+  cheques.forEach(c => { mapa[c.id] = c; });
+  remotos.forEach(r => {
+    const local = mapa[r.id];
+    if (!local || (r.actualizadoEn || 0) > (local.actualizadoEn || 0)) {
+      mapa[r.id] = r;
+    }
+  });
+  cheques = Object.values(mapa);
+
+  const notasRemotas = data.notas || {};
+  Object.keys(notasRemotas).forEach(mes => {
+    if (!(mes in notas)) notas[mes] = notasRemotas[mes];
+  });
+  guardarLocal();
+}
+
+async function empujarASheets() {
+  if (!sheetsUrl) return;
+  try {
+    await fetch(sheetsUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // evita preflight CORS
+      body: JSON.stringify({ cheques, notas })
+    });
+  } catch (e) {
+    console.warn('No se pudo empujar a Sheets:', e);
+    mostrarToast('⚠️ No se pudo guardar en Google Sheets (revisa tu internet)');
+  }
+}
+
+// ── CONECTAR ARCHIVO EXCEL COMO BASE DE DATOS (File System Access API) ──
 function idbAbrir() {
   return new Promise((res, rej) => {
     const req = indexedDB.open(HANDLE_DB, 1);
@@ -392,14 +603,17 @@ async function idbLeerHandle() {
 function actualizarEstadoArchivoUI(conectado, nombre) {
   const el = document.getElementById('estado-archivo');
   const btn = document.getElementById('btn-conectar-archivo');
+  const btnReleer = document.getElementById('btn-releer-archivo');
   if (conectado) {
     el.className = 'estado-archivo conectado';
-    el.textContent = '✅ Guardando también en: ' + nombre;
-    btn.textContent = '🔄 Cambiar archivo conectado';
+    el.textContent = '✅ Base de datos: ' + nombre;
+    btn.textContent = '🔄 Cambiar Excel de base de datos';
+    btnReleer.style.display = 'block';
   } else {
     el.className = 'estado-archivo desconectado';
-    el.textContent = '📌 Guardando en este navegador (localStorage)';
-    btn.textContent = '🔗 Guardar en un archivo de mi PC';
+    el.textContent = '📌 Guardando solo en este navegador (localStorage)';
+    btn.textContent = '🔗 Conectar / crear Excel como base de datos';
+    btnReleer.style.display = 'none';
   }
 }
 
@@ -410,17 +624,30 @@ async function conectarArchivo() {
   }
   try {
     const handle = await window.showSaveFilePicker({
-      suggestedName: 'cheques_datos.json',
-      types: [{ description: 'Datos de Cheques', accept: { 'application/json': ['.json'] } }]
+      suggestedName: 'cheques_datos.xlsx',
+      types: [{ description: 'Excel de Cheques', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }]
     });
     fileHandle = handle;
     await idbGuardarHandle(handle);
+
+    // Si el archivo elegido ya tenía cheques guardados, cargarlos (el Excel es la base de datos).
+    const cargó = await cargarDesdeHandle(handle, { preguntarSiHayDatosLocales: true, silencioso: true });
+    // Siempre dejamos el archivo sincronizado con el estado final.
     await guardarEnArchivo();
+
     actualizarEstadoArchivoUI(true, handle.name);
-    mostrarToast('🔗 Archivo conectado — se guardará ahí automáticamente');
+    render();
+    mostrarToast(cargó ? '🔗 Excel conectado — se cargaron sus cheques' : '🔗 Excel conectado — se guardará ahí automáticamente');
   } catch (e) {
-    if (e.name !== 'AbortError') mostrarToast('⚠️ No se pudo conectar el archivo');
+    if (e.name !== 'AbortError') mostrarToast('⚠️ No se pudo conectar el Excel');
   }
+}
+
+async function releerArchivoConectado() {
+  if (!fileHandle) { mostrarToast('⚠️ No hay ningún Excel conectado todavía'); return; }
+  const cargó = await cargarDesdeHandle(fileHandle, { preguntarSiHayDatosLocales: false, silencioso: false });
+  if (!cargó) mostrarToast('ℹ️ No se encontraron cambios nuevos en el Excel');
+  render();
 }
 
 async function intentarReconectarArchivo() {
@@ -431,12 +658,80 @@ async function intentarReconectarArchivo() {
     const permiso = await handle.queryPermission({ mode: 'readwrite' });
     if (permiso === 'granted') {
       fileHandle = handle;
+      // El Excel es la base de datos: al abrir la app, se lee primero de ahí.
+      await cargarDesdeHandle(handle, { preguntarSiHayDatosLocales: false, silencioso: true });
       actualizarEstadoArchivoUI(true, handle.name);
     } else {
       // Necesita un clic del usuario para volver a pedir permiso; dejamos el botón normal.
       actualizarEstadoArchivoUI(false);
     }
   } catch (e) { /* sin handle guardado aún */ }
+}
+
+// ── EXCEL: EXPORTAR / IMPORTAR ────────────────────────────────────
+function construirLibroExcel() {
+  const filasCheques = cheques.map(c => ({
+    ID: c.id,
+    Beneficiario: c.beneficiario,
+    Monto: Number(c.monto),
+    'Fecha de pago': c.fecha,
+    'Número de cheque': c.numero || '',
+    Notas: c.notas || '',
+    Pagado: c.pagado ? 'Sí' : 'No',
+    'Fecha en que se pagó': c.fechaPago || ''
+  }));
+  const filasNotas = Object.entries(notas).map(([mes, texto]) => ({ Mes: mes, Notas: texto }));
+
+  const wb = XLSX.utils.book_new();
+  const hojaCheques = XLSX.utils.json_to_sheet(filasCheques.length ? filasCheques : [{ Beneficiario:'', Monto:'', 'Fecha de pago':'' }]);
+  const hojaNotas    = XLSX.utils.json_to_sheet(filasNotas.length ? filasNotas : [{ Mes:'', Notas:'' }]);
+  XLSX.utils.book_append_sheet(wb, hojaCheques, 'Cheques');
+  XLSX.utils.book_append_sheet(wb, hojaNotas, 'Notas');
+  return wb;
+}
+
+function descargarExcel() {
+  const wb = construirLibroExcel();
+  XLSX.writeFile(wb, `contanexus_cheques_${hoyISO()}.xlsx`);
+  mostrarToast('📊 Excel descargado');
+}
+
+function importarExcel(event) {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const { chequesNuevos, notasNuevas } = filasAChequesYNotas(wb);
+
+      cheques = chequesNuevos;
+      notas = notasNuevas;
+
+      guardarTodo();
+      mostrarToast('✅ Excel importado correctamente');
+      render();
+    } catch (err) {
+      mostrarToast('⚠️ No se pudo leer ese archivo Excel');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Excel a veces entrega fechas como número de serie; esto las convierte a YYYY-MM-DD
+function normalizarFechaExcel(valor) {
+  if (!valor) return '';
+  if (typeof valor === 'number') {
+    const fecha = XLSX.SSF.parse_date_code(valor);
+    return `${fecha.y}-${String(fecha.m).padStart(2,'0')}-${String(fecha.d).padStart(2,'0')}`;
+  }
+  const s = String(valor).trim();
+  // admite YYYY-MM-DD directo
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  if (!isNaN(d)) return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return s;
 }
 
 // ── RESPALDO MANUAL (sin contraseña) ─────────────────────────────
@@ -708,6 +1003,7 @@ function guardarCheque(e) {
     fecha: document.getElementById('f-fecha').value,
     numero: document.getElementById('f-numero').value.trim(),
     notas: document.getElementById('f-notas').value.trim(),
+    actualizadoEn: Date.now(),
   };
   if (id) {
     const c = cheques.find(x => x.id === id);
@@ -749,6 +1045,7 @@ function pedirPagar(id) {
     fn: () => {
       c.pagado = true;
       c.fechaPago = hoyISO();
+      c.actualizadoEn = Date.now();
       guardarTodo();
       mostrarToast('✅ Cheque marcado como pagado');
       cerrarModal();
@@ -783,8 +1080,15 @@ function formatFecha(iso) {
 }
 
 // ── INIT ──────────────────────────────────────────────────────────
-intentarReconectarArchivo();
-render();
+(async function init() {
+  await intentarReconectarArchivo(); // si ya hay un Excel conectado, se lee primero de ahí
+  if (sheetsUrl) {
+    actualizarEstadoSheetsUI(true);
+    await sincronizarConSheets();
+    iniciarPolling();
+  }
+  render();
+})();
 </script>
 </body>
 </html>
