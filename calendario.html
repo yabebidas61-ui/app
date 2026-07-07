@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e272e">
+<title>ContaNexus — Cheques por Pagar</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
+body { font-family: 'IBM Plex Sans', sans-serif; display: flex; background: #f0f2f5; min-height: 100vh; overflow-x: hidden; }
+
+/* ===== SIDEBAR ===== */
+.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 900; opacity: 0; transition: opacity 0.25s; }
+.sidebar-overlay.activo { display: block; opacity: 1; }
+.sidebar { width: 240px; max-width: 78vw; background: #1e272e; color: white; height: 100vh; min-height: 100vh; padding: 20px; position: fixed; top: 0; left: 0; flex-shrink: 0; z-index: 950; transform: translateX(-100%); transition: transform 0.28s cubic-bezier(0.4,0,0.2,1); overflow-y: auto; }
+.sidebar.activo { transform: translateX(0); }
+.sidebar-close { display: block; margin-left: auto; background: none; border: none; color: #8395a7; font-size: 22px; line-height: 1; padding: 4px 8px; cursor: pointer; }
+.sidebar-brand { font-family: 'IBM Plex Mono', monospace; letter-spacing: 2px; color: #ff3f34; margin-bottom: 8px; font-size: 15px; font-weight: 700; }
+.sidebar-sub { font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 16px; }
+.nav-link { display: flex; align-items: center; gap: 10px; color: #c8d6e5; padding: 13px 12px; text-decoration: none; margin-top: 4px; border-radius: 6px; font-size: 15px; transition: background 0.2s; }
+.nav-link:hover, .nav-link:active { background: #485460; color: white; }
+.nav-link.active { background: #ff3f34; color: white; font-weight: 600; }
+
+/* ===== MAIN ===== */
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; width: 100%; }
+.header { background: linear-gradient(135deg, #1e272e 0%, #2f3640 100%); color: white; padding: 14px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 3px solid #ff3f34; position: sticky; top: 0; z-index: 500; flex-wrap: wrap; }
+.hamburger { background: none; border: none; color: white; font-size: 22px; padding: 6px 8px; cursor: pointer; line-height: 1; flex-shrink: 0; }
+.header-icon { font-size: 22px; flex-shrink: 0; }
+.header-title { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; }
+.header-sub { font-size: 11px; color: #8395a7; margin-top: 2px; }
+.fecha-sistema { font-size: 11px; color: #8395a7; font-family: 'IBM Plex Mono', monospace; margin-left: auto; width: 100%; text-align: right; order: 3; }
+
+.contenido { padding: 14px; flex: 1; }
+
+.card { background: white; border-radius: 14px; padding: 16px 14px; box-shadow: 0 2px 14px rgba(0,0,0,0.07); margin-bottom: 16px; }
+.card-title { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 700; color: #1e272e; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.card-title span { display: flex; align-items: center; gap: 8px; }
+
+.btn { padding: 12px 18px; border: none; border-radius: 8px; cursor: pointer; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; font-weight: 600; transition: all 0.2s; min-height: 44px; }
+.btn-primary { background: #ff3f34; color: white; }
+.btn-primary:hover { background: #c0392b; }
+.btn-dark { background: #2d3436; color: white; }
+.btn-dark:hover { background: #1e272e; }
+.btn-green { background: #00b894; color: white; }
+.btn-green:hover { background: #00966f; }
+.btn-sm { padding: 7px 14px; font-size: 13px; min-height: auto; }
+
+/* ===== ALERTAS ===== */
+.alerta-banner { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: 12px; margin-bottom: 12px; font-size: 13.5px; line-height: 1.5; }
+.alerta-vencido { background: #fde8e8; color: #b71c1c; border: 1.5px solid #f5b8b8; }
+.alerta-hoy { background: #fff4e0; color: #a65e00; border: 1.5px solid #ffd699; }
+.alerta-proximo { background: #e3edff; color: #1a4a9e; border: 1.5px solid #b6cbf5; }
+.alerta-ok { background: #d4f5e9; color: #00695c; border: 1.5px solid #9fe3cc; }
+.alerta-icon { font-size: 20px; flex-shrink: 0; }
+.alerta-body strong { display: block; margin-bottom: 3px; font-family: 'IBM Plex Mono', monospace; }
+
+/* ===== NAV MES ===== */
+.mes-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.mes-nav-btn { background: white; border: 1.5px solid #dfe6e9; color: #2d3436; width: 40px; height: 40px; border-radius: 8px; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.mes-nav-btn:hover { background: #f1f2f6; }
+.mes-nav-titulo { font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 700; color: #1e272e; text-transform: uppercase; flex: 1; text-align: center; }
+.mes-nav-hoy { flex-shrink: 0; }
+
+/* ===== RESUMEN MES ===== */
+.stats-mes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+.stat-m { background: white; border-radius: 12px; padding: 13px 14px; box-shadow: 0 2px 12px rgba(0,0,0,0.07); border-top: 3px solid #ddd; min-width: 0; }
+.stat-m.total    { border-top-color: #1e272e; }
+.stat-m.pendiente{ border-top-color: #ff3f34; }
+.stat-m.pagado   { border-top-color: #00b894; }
+.stat-m.vencido  { border-top-color: #e74c3c; }
+.stat-m-label { font-size: 10px; color: #8395a7; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 5px; line-height: 1.3; }
+.stat-m-val { font-family: 'IBM Plex Mono', monospace; font-size: 18px; font-weight: 700; color: #1e272e; }
+
+/* ===== CALENDARIO ===== */
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.cal-dow { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 700; color: #8395a7; text-transform: uppercase; text-align: center; padding-bottom: 4px; }
+.cal-day { background: #fafbfc; border: 1.5px solid #f1f2f6; border-radius: 10px; min-height: 68px; padding: 6px; cursor: pointer; transition: all 0.15s; display: flex; flex-direction: column; gap: 4px; position: relative; }
+.cal-day:hover { border-color: #ff3f34; background: white; }
+.cal-day.vacio { background: transparent; border: none; cursor: default; }
+.cal-day.hoy { border-color: #ff3f34; border-width: 2px; }
+.cal-day-num { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; color: #2d3436; }
+.cal-chip { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; font-weight: 700; padding: 2px 5px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-chip.pend  { background: #fde8e8; color: #b71c1c; }
+.cal-chip.pagado{ background: #d4f5e9; color: #00695c; text-decoration: line-through; opacity: 0.8; }
+.cal-day-mas { font-size: 9.5px; color: #8395a7; font-family: 'IBM Plex Mono', monospace; }
+
+/* ===== NOTAS ===== */
+textarea.notas-mes { width: 100%; min-height: 100px; border: 1.5px solid #dfe6e9; border-radius: 8px; padding: 10px 12px; font-family: 'IBM Plex Sans', sans-serif; font-size: 13.5px; resize: vertical; outline: none; }
+textarea.notas-mes:focus { border-color: #ff3f34; }
+
+/* ===== LISTA CHEQUES (dentro de modal de día / historial) ===== */
+.cheque-fila { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px dashed #f1f2f6; flex-wrap: wrap; }
+.cheque-fila:last-child { border-bottom: none; }
+.cheque-info { flex: 1; min-width: 140px; }
+.cheque-benef { font-size: 13.5px; font-weight: 600; color: #1e272e; }
+.cheque-meta { font-size: 11.5px; color: #8395a7; font-family: 'IBM Plex Mono', monospace; margin-top: 2px; }
+.cheque-monto { font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 700; color: #1e272e; white-space: nowrap; }
+.cheque-badge { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 16px; white-space: nowrap; }
+.badge-pendiente { background: #fde8e8; color: #b71c1c; }
+.badge-vencido   { background: #e74c3c; color: white; }
+.badge-pagado    { background: #d4f5e9; color: #00695c; }
+.cheque-acciones { display: flex; gap: 6px; }
+.icon-btn { border: none; background: #f1f2f6; color: #636e72; width: 34px; height: 34px; border-radius: 8px; cursor: pointer; font-size: 15px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; }
+.icon-btn:hover { transform: scale(1.08); }
+.icon-btn.pay:hover  { background: #d4f5e9; color: #00695c; }
+.icon-btn.danger:hover { background: #fde8e8; color: #b71c1c; }
+.icon-btn.edit:hover { background: #e3edff; color: #1a4a9e; }
+
+.empty-state { text-align: center; padding: 30px 20px; color: #b2bec3; }
+.empty-icon { font-size: 36px; margin-bottom: 8px; }
+
+/* ===== MODAL ===== */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
+.modal-overlay.visible { display: flex; }
+.modal-box { background: white; border-radius: 16px; padding: 22px; width: min(460px, 100%); box-shadow: 0 20px 60px rgba(0,0,0,0.25); animation: slideUp 0.25s cubic-bezier(0.34,1.56,0.64,1); max-height: 90vh; overflow-y: auto; }
+@keyframes slideUp { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.modal-title { font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 700; color: #1e272e; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; }
+.modal-title button { background: none; border: none; font-size: 20px; color: #b2bec3; cursor: pointer; }
+.modal-sub { font-size: 12px; color: #8395a7; margin-bottom: 16px; }
+.form-group { margin-bottom: 12px; }
+.form-label { font-size: 12px; font-weight: 600; color: #636e72; margin-bottom: 5px; display: block; }
+.form-input { width: 100%; padding: 11px 12px; border: 1.5px solid #dfe6e9; border-radius: 8px; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; outline: none; }
+.form-input:focus { border-color: #ff3f34; }
+.form-row { display: flex; gap: 10px; }
+.form-row .form-group { flex: 1; }
+.modal-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+.modal-btns button { flex: 1 1 auto; }
+.btn-cancel { padding: 11px 20px; border: 1.5px solid #dfe6e9; border-radius: 8px; background: white; color: #636e72; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; min-height: 44px; }
+.btn-cancel:hover { background: #f8f9fa; }
+.btn-confirm { padding: 11px 20px; border: none; border-radius: 8px; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; background: #e74c3c; color: white; min-height: 44px; }
+.btn-confirm:hover { background: #c0392b; }
+.modal-lista-dia { margin-top: 6px; margin-bottom: 14px; }
+
+.toast { position: fixed; bottom: 28px; right: 28px; background: #2d3436; color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); transform: translateY(80px); opacity: 0; transition: all 0.35s cubic-bezier(0.34,1.56,0.64,1); z-index: 3000; }
+.toast.visible { transform: translateY(0); opacity: 1; }
+
+@media (max-width: 768px) {
+  .cal-day { min-height: 54px; padding: 4px; }
+  .cal-day-num { font-size: 11px; }
+  .cal-chip { font-size: 8.5px; }
+  .toast { left: 16px; right: 16px; bottom: 20px; text-align: center; }
+}
+
+@media (min-width: 769px) {
+  .hamburger, .sidebar-close, .sidebar-overlay { display: none !important; }
+  .sidebar { position: sticky; top: 0; transform: none; width: 220px; max-width: none; height: auto; }
+  .contenido { padding: 24px 28px; }
+  .header { padding: 18px 28px; }
+  .header-icon { font-size: 26px; }
+  .header-title { font-size: 18px; }
+  .header-sub { font-size: 12px; }
+  .fecha-sistema { font-size: 12px; width: auto; order: 0; }
+  .card { padding: 20px 24px; margin-bottom: 20px; }
+  .card-title { font-size: 14px; margin-bottom: 16px; }
+  .stats-mes { grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+  .stat-m { padding: 18px 20px; }
+  .stat-m-label { font-size: 11px; }
+  .stat-m-val { font-size: 22px; }
+  .cal-day { min-height: 92px; padding: 8px; }
+  .cal-day-num { font-size: 13px; }
+  .cal-chip { font-size: 10.5px; }
+  .contenido-flex { display: flex; gap: 20px; align-items: flex-start; }
+  .contenido-flex .col-cal { flex: 2; min-width: 0; }
+  .contenido-flex .col-side { flex: 1; min-width: 260px; }
+}
+</style>
+</head>
+<body>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="cerrarMenu()"></div>
+<div class="sidebar" id="sidebar">
+  <button class="sidebar-close" onclick="cerrarMenu()" aria-label="Cerrar menú">✕</button>
+  <div class="sidebar-brand">ContaNexus</div>
+  <div class="sidebar-sub">Control de Inventario</div>
+  <a href="index.html" class="nav-link">📅 Historial de Caja</a>
+  <a href="entrada_salida.html" class="nav-link">🔄 Movimientos Inventario</a>
+  <a href="bodega.html" class="nav-link">📦 Bodega</a>
+  <a href="vencimientos.html" class="nav-link">⏳ Vencimientos</a>
+  <a href="cuentas_cobrar.html" class="nav-link">💸 Cuentas por Cobrar</a>
+  <a href="cheques.html" class="nav-link active">🧾 Cheques por Pagar</a>
+</div>
+
+<div class="main">
+  <div class="header">
+    <button class="hamburger" onclick="abrirMenu()" aria-label="Abrir menú">☰</button>
+    <div class="header-icon">🧾</div>
+    <div>
+      <div class="header-title">CHEQUES POR PAGAR</div>
+      <div class="header-sub">Calendario de vencimientos, alertas y pagos</div>
+    </div>
+    <div class="fecha-sistema" id="txt-fecha"></div>
+  </div>
+
+  <div class="contenido">
+
+    <div id="zona-alertas"></div>
+
+    <div class="contenido-flex">
+      <div class="col-cal">
+        <div class="card">
+          <div class="card-title">
+            <span>📅 Calendario de Pagos</span>
+            <button class="btn btn-primary btn-sm" onclick="abrirModalNuevo()">+ Nuevo cheque</button>
+          </div>
+
+          <div class="mes-nav">
+            <button class="mes-nav-btn" onclick="cambiarMes(-1)">‹</button>
+            <div class="mes-nav-titulo" id="mes-titulo"></div>
+            <button class="mes-nav-btn" onclick="cambiarMes(1)">›</button>
+            <button class="btn btn-dark btn-sm mes-nav-hoy" onclick="irHoy()">Hoy</button>
+          </div>
+
+          <div class="stats-mes">
+            <div class="stat-m total"><div class="stat-m-label">📋 Total del mes</div><div class="stat-m-val" id="st-total">$0.00</div></div>
+            <div class="stat-m pendiente"><div class="stat-m-label">🔴 Pendiente</div><div class="stat-m-val" id="st-pendiente">$0.00</div></div>
+            <div class="stat-m vencido"><div class="stat-m-label">⚠️ Vencido</div><div class="stat-m-val" id="st-vencido">$0.00</div></div>
+            <div class="stat-m pagado"><div class="stat-m-label">✅ Pagado</div><div class="stat-m-val" id="st-pagado">$0.00</div></div>
+          </div>
+
+          <div class="cal-grid" id="cal-dow"></div>
+          <div class="cal-grid" id="cal-grid" style="margin-top:6px;"></div>
+        </div>
+      </div>
+
+      <div class="col-side">
+        <div class="card">
+          <div class="card-title"><span>🗒️ Notas</span></div>
+          <textarea class="notas-mes" id="notas-mes" placeholder="Escribe notas para este mes..." onchange="guardarNotas()"></textarea>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span>📜 Historial de cheques pagados</span></div>
+          <div id="lista-historial"><div class="empty-state"><div class="empty-icon">📭</div><p>Aún no hay cheques pagados</p></div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODAL: día / nuevo / editar cheque -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-title">
+      <span id="modal-titulo-txt">Cheques del día</span>
+      <button onclick="cerrarModal()">✕</button>
+    </div>
+    <div class="modal-sub" id="modal-sub-txt"></div>
+
+    <div class="modal-lista-dia" id="modal-lista-dia"></div>
+
+    <form id="form-cheque" onsubmit="guardarCheque(event)">
+      <input type="hidden" id="f-id">
+      <div class="form-group">
+        <label class="form-label">Beneficiario / Motivo</label>
+        <input class="form-input" id="f-beneficiario" placeholder="Ej: Proveedor Agroinsumos S.A." required>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Monto ($)</label>
+          <input class="form-input" id="f-monto" type="number" step="0.01" min="0" placeholder="0.00" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fecha de pago</label>
+          <input class="form-input" id="f-fecha" type="date" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label"># de cheque (opcional)</label>
+        <input class="form-input" id="f-numero" placeholder="Ej: 000452">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notas (opcional)</label>
+        <input class="form-input" id="f-notas" placeholder="Detalle adicional">
+      </div>
+      <div class="modal-btns">
+        <button type="button" class="btn-cancel" onclick="cerrarModal()">Cancelar</button>
+        <button type="submit" class="btn-confirm" style="background:#ff3f34;">Guardar cheque</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: confirmar pago / borrar -->
+<div class="modal-overlay" id="modal-confirm-overlay">
+  <div class="modal-box" style="text-align:center;">
+    <div style="font-size:36px;margin-bottom:12px;" id="mc-icon">💰</div>
+    <div class="modal-title" style="justify-content:center;" id="mc-titulo">Confirmar</div>
+    <div class="modal-sub" id="mc-desc" style="margin-bottom:20px;"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="cerrarModalConfirm()">Cancelar</button>
+      <button class="btn-confirm" id="mc-btn-confirm" onclick="ejecutarConfirm()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── ESTADO ────────────────────────────────────────────────────────
+const STORAGE_KEY = 'contanexus_cheques';
+const NOTAS_KEY    = 'contanexus_cheques_notas';
+const ALERT_KEY    = 'contanexus_cheques_ultima_alerta';
+
+let cheques = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+let notas   = JSON.parse(localStorage.getItem(NOTAS_KEY) || '{}');
+let hoy     = new Date();
+let vistaAno = hoy.getFullYear();
+let vistaMes = hoy.getMonth(); // 0-11
+let diaSeleccionado = null;
+let _accionConfirm = null;
+
+document.getElementById('txt-fecha').textContent =
+  hoy.toLocaleDateString('es-EC', { day:'2-digit', month:'2-digit', year:'numeric' });
+
+function guardarCheques() { localStorage.setItem(STORAGE_KEY, JSON.stringify(cheques)); }
+function guardarNotas() {
+  const key = claveMes(vistaAno, vistaMes);
+  notas[key] = document.getElementById('notas-mes').value;
+  localStorage.setItem(NOTAS_KEY, JSON.stringify(notas));
+}
+function claveMes(a,m) { return a + '-' + String(m+1).padStart(2,'0'); }
+function hoyISO() { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
+// ── MENÚ MÓVIL ────────────────────────────────────────────────────
+function abrirMenu() { document.getElementById('sidebar').classList.add('activo'); document.getElementById('sidebarOverlay').classList.add('activo'); document.body.style.overflow='hidden'; }
+function cerrarMenu() { document.getElementById('sidebar').classList.remove('activo'); document.getElementById('sidebarOverlay').classList.remove('activo'); document.body.style.overflow=''; }
+
+// ── TOAST ─────────────────────────────────────────────────────────
+function mostrarToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('visible');
+  setTimeout(()=>t.classList.remove('visible'), 3200);
+}
+
+// ── NAVEGACIÓN DE MES ────────────────────────────────────────────
+function cambiarMes(delta) {
+  vistaMes += delta;
+  if (vistaMes > 11) { vistaMes = 0; vistaAno++; }
+  if (vistaMes < 0)  { vistaMes = 11; vistaAno--; }
+  render();
+}
+function irHoy() { vistaAno = hoy.getFullYear(); vistaMes = hoy.getMonth(); render(); }
+
+// ── RENDER PRINCIPAL ─────────────────────────────────────────────
+const NOMBRES_MES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const DOW = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+function render() {
+  document.getElementById('mes-titulo').textContent = NOMBRES_MES[vistaMes] + ' ' + vistaAno;
+  document.getElementById('notas-mes').value = notas[claveMes(vistaAno, vistaMes)] || '';
+  renderAlertas();
+  renderCalendario();
+  renderStats();
+  renderHistorial();
+}
+
+function renderAlertas() {
+  const iso = hoyISO();
+  const pendientes = cheques.filter(c => !c.pagado);
+  const vencidos = pendientes.filter(c => c.fecha < iso);
+  const hoyMismo  = pendientes.filter(c => c.fecha === iso);
+  const proximos  = pendientes.filter(c => c.fecha > iso && c.fecha <= sumarDias(iso, 3));
+
+  const zona = document.getElementById('zona-alertas');
+  let html = '';
+
+  if (vencidos.length) {
+    const total = vencidos.reduce((s,c)=>s+Number(c.monto),0);
+    html += `<div class="alerta-banner alerta-vencido"><div class="alerta-icon">⚠️</div><div class="alerta-body"><strong>${vencidos.length} cheque(s) VENCIDO(S) sin pagar — $${total.toFixed(2)}</strong>${vencidos.map(c=>`${c.beneficiario} · vencía ${formatFecha(c.fecha)} · $${Number(c.monto).toFixed(2)}`).join(' · ')}</div></div>`;
+  }
+  if (hoyMismo.length) {
+    const total = hoyMismo.reduce((s,c)=>s+Number(c.monto),0);
+    html += `<div class="alerta-banner alerta-hoy"><div class="alerta-icon">🔔</div><div class="alerta-body"><strong>${hoyMismo.length} cheque(s) vencen HOY — $${total.toFixed(2)}</strong>${hoyMismo.map(c=>`${c.beneficiario} · $${Number(c.monto).toFixed(2)}`).join(' · ')}</div></div>`;
+  }
+  if (proximos.length) {
+    html += `<div class="alerta-banner alerta-proximo"><div class="alerta-icon">📆</div><div class="alerta-body"><strong>${proximos.length} cheque(s) por vencer en los próximos 3 días</strong>${proximos.map(c=>`${c.beneficiario} · ${formatFecha(c.fecha)} · $${Number(c.monto).toFixed(2)}`).join(' · ')}</div></div>`;
+  }
+  if (!vencidos.length && !hoyMismo.length && !proximos.length) {
+    html += `<div class="alerta-banner alerta-ok"><div class="alerta-icon">✅</div><div class="alerta-body"><strong>Todo al día</strong>No tienes cheques vencidos ni próximos a vencer en los siguientes 3 días.</div></div>`;
+  }
+  zona.innerHTML = html;
+
+  notificarSiCorresponde(vencidos.length + hoyMismo.length);
+}
+
+function sumarDias(iso, n) {
+  const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate()+n);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+function notificarSiCorresponde(cantidadUrgente) {
+  if (cantidadUrgente <= 0) return;
+  const ultima = localStorage.getItem(ALERT_KEY);
+  const iso = hoyISO();
+  if (ultima === iso) return; // ya se notificó hoy
+  localStorage.setItem(ALERT_KEY, iso);
+  if ('Notification' in window) {
+    if (Notification.permission === 'granted') {
+      new Notification('ContaNexus — Cheques por Pagar', { body: `Tienes ${cantidadUrgente} cheque(s) vencido(s) o que vencen hoy.` });
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then(p => {
+        if (p === 'granted') new Notification('ContaNexus — Cheques por Pagar', { body: `Tienes ${cantidadUrgente} cheque(s) vencido(s) o que vencen hoy.` });
+      });
+    }
+  }
+}
+
+function renderCalendario() {
+  document.getElementById('cal-dow').innerHTML = DOW.map(d=>`<div class="cal-dow">${d}</div>`).join('');
+
+  const primerDia = new Date(vistaAno, vistaMes, 1);
+  const inicioSemana = primerDia.getDay(); // 0=Dom
+  const diasEnMes = new Date(vistaAno, vistaMes+1, 0).getDate();
+  const iso = hoyISO();
+
+  const porDia = {};
+  cheques.forEach(c => {
+    const [a,m] = c.fecha.split('-').map(Number);
+    if (a === vistaAno && (m-1) === vistaMes) {
+      const d = Number(c.fecha.split('-')[2]);
+      if (!porDia[d]) porDia[d] = [];
+      porDia[d].push(c);
+    }
+  });
+
+  let html = '';
+  for (let i=0; i<inicioSemana; i++) html += `<div class="cal-day vacio"></div>`;
+
+  for (let dia=1; dia<=diasEnMes; dia++) {
+    const fechaISO = vistaAno+'-'+String(vistaMes+1).padStart(2,'0')+'-'+String(dia).padStart(2,'0');
+    const lista = porDia[dia] || [];
+    const esHoy = fechaISO === iso;
+    const visibles = lista.slice(0,2);
+    const restantes = lista.length - visibles.length;
+
+    html += `<div class="cal-day ${esHoy ? 'hoy' : ''}" onclick="abrirModalDia('${fechaISO}')">
+      <div class="cal-day-num">${dia}</div>
+      ${visibles.map(c => `<div class="cal-chip ${c.pagado?'pagado':'pend'}">$${Number(c.monto).toFixed(0)} ${c.beneficiario.slice(0,10)}</div>`).join('')}
+      ${restantes > 0 ? `<div class="cal-day-mas">+${restantes} más</div>` : ''}
+    </div>`;
+  }
+  document.getElementById('cal-grid').innerHTML = html;
+}
+
+function renderStats() {
+  const chequesMes = cheques.filter(c => {
+    const [a,m] = c.fecha.split('-').map(Number);
+    return a === vistaAno && (m-1) === vistaMes;
+  });
+  const iso = hoyISO();
+  const total = chequesMes.reduce((s,c)=>s+Number(c.monto),0);
+  const pagado = chequesMes.filter(c=>c.pagado).reduce((s,c)=>s+Number(c.monto),0);
+  const vencido = chequesMes.filter(c=>!c.pagado && c.fecha < iso).reduce((s,c)=>s+Number(c.monto),0);
+  const pendiente = chequesMes.filter(c=>!c.pagado).reduce((s,c)=>s+Number(c.monto),0);
+
+  document.getElementById('st-total').textContent = '$'+total.toFixed(2);
+  document.getElementById('st-pendiente').textContent = '$'+pendiente.toFixed(2);
+  document.getElementById('st-vencido').textContent = '$'+vencido.toFixed(2);
+  document.getElementById('st-pagado').textContent = '$'+pagado.toFixed(2);
+}
+
+function renderHistorial() {
+  const pagados = cheques.filter(c=>c.pagado).sort((a,b)=>b.fechaPago.localeCompare(a.fechaPago));
+  const cont = document.getElementById('lista-historial');
+  if (!pagados.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>Aún no hay cheques pagados</p></div>';
+    return;
+  }
+  cont.innerHTML = pagados.slice(0,15).map(c => `
+    <div class="cheque-fila">
+      <div class="cheque-info">
+        <div class="cheque-benef">${c.beneficiario}</div>
+        <div class="cheque-meta">Vencía: ${formatFecha(c.fecha)} · Pagado: ${formatFecha(c.fechaPago)}</div>
+      </div>
+      <div class="cheque-monto">$${Number(c.monto).toFixed(2)}</div>
+      <button class="icon-btn danger" title="Eliminar del historial" onclick="pedirBorrar('${c.id}')">🗑️</button>
+    </div>`).join('');
+}
+
+// ── MODAL DÍA ─────────────────────────────────────────────────────
+function abrirModalDia(fechaISO) {
+  diaSeleccionado = fechaISO;
+  document.getElementById('modal-titulo-txt').textContent = 'Cheques — ' + formatFecha(fechaISO);
+  document.getElementById('modal-sub-txt').textContent = 'Consulta, paga o agrega un cheque para este día.';
+  document.getElementById('f-id').value = '';
+  document.getElementById('form-cheque').reset();
+  document.getElementById('f-fecha').value = fechaISO;
+
+  const lista = cheques.filter(c => c.fecha === fechaISO);
+  const cont = document.getElementById('modal-lista-dia');
+  const iso = hoyISO();
+
+  if (!lista.length) {
+    cont.innerHTML = '<div class="empty-state" style="padding:14px;"><p>Sin cheques registrados este día.</p></div>';
+  } else {
+    cont.innerHTML = lista.map(c => {
+      let badge = c.pagado ? `<span class="cheque-badge badge-pagado">✅ Pagado</span>`
+                : (c.fecha < iso ? `<span class="cheque-badge badge-vencido">⚠️ Vencido</span>`
+                : `<span class="cheque-badge badge-pendiente">Pendiente</span>`);
+      return `<div class="cheque-fila">
+        <div class="cheque-info">
+          <div class="cheque-benef">${c.beneficiario}</div>
+          <div class="cheque-meta">${c.numero ? '# '+c.numero+' · ' : ''}${c.notas || ''}</div>
+          ${badge}
+        </div>
+        <div class="cheque-monto">$${Number(c.monto).toFixed(2)}</div>
+        <div class="cheque-acciones">
+          ${!c.pagado ? `<button class="icon-btn pay" title="Marcar como pagado" onclick="pedirPagar('${c.id}')">✅</button>` : ''}
+          <button class="icon-btn edit" title="Editar" onclick="editarCheque('${c.id}')">✏️</button>
+          <button class="icon-btn danger" title="Eliminar" onclick="pedirBorrar('${c.id}')">🗑️</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('modal-overlay').classList.add('visible');
+}
+
+function abrirModalNuevo() {
+  diaSeleccionado = null;
+  document.getElementById('modal-titulo-txt').textContent = 'Nuevo cheque';
+  document.getElementById('modal-sub-txt').textContent = 'Registra un cheque pendiente de pago.';
+  document.getElementById('modal-lista-dia').innerHTML = '';
+  document.getElementById('form-cheque').reset();
+  document.getElementById('f-id').value = '';
+  document.getElementById('f-fecha').value = hoyISO();
+  document.getElementById('modal-overlay').classList.add('visible');
+}
+
+function editarCheque(id) {
+  const c = cheques.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('f-id').value = c.id;
+  document.getElementById('f-beneficiario').value = c.beneficiario;
+  document.getElementById('f-monto').value = c.monto;
+  document.getElementById('f-fecha').value = c.fecha;
+  document.getElementById('f-numero').value = c.numero || '';
+  document.getElementById('f-notas').value = c.notas || '';
+  document.getElementById('modal-titulo-txt').textContent = 'Editar cheque';
+  document.getElementById('modal-overlay').classList.add('visible');
+}
+
+function cerrarModal() { document.getElementById('modal-overlay').classList.remove('visible'); }
+document.getElementById('modal-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) cerrarModal(); });
+
+function guardarCheque(e) {
+  e.preventDefault();
+  const id = document.getElementById('f-id').value;
+  const data = {
+    beneficiario: document.getElementById('f-beneficiario').value.trim(),
+    monto: Number(document.getElementById('f-monto').value),
+    fecha: document.getElementById('f-fecha').value,
+    numero: document.getElementById('f-numero').value.trim(),
+    notas: document.getElementById('f-notas').value.trim(),
+  };
+  if (id) {
+    const c = cheques.find(x => x.id === id);
+    Object.assign(c, data);
+    mostrarToast('✏️ Cheque actualizado');
+  } else {
+    cheques.push({ id: 'ch_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), pagado:false, fechaPago:null, ...data });
+    mostrarToast('✅ Cheque agregado');
+  }
+  guardarCheques();
+  cerrarModal();
+  vistaAno = Number(data.fecha.split('-')[0]);
+  vistaMes = Number(data.fecha.split('-')[1]) - 1;
+  render();
+}
+
+// ── CONFIRMACIONES (pagar / borrar) ──────────────────────────────
+function abrirModalConfirm({icon, titulo, desc, labelBtn, color, fn}) {
+  document.getElementById('mc-icon').textContent = icon;
+  document.getElementById('mc-titulo').textContent = titulo;
+  document.getElementById('mc-desc').textContent = desc;
+  const btn = document.getElementById('mc-btn-confirm');
+  btn.textContent = labelBtn;
+  btn.style.background = color;
+  _accionConfirm = fn;
+  document.getElementById('modal-confirm-overlay').classList.add('visible');
+}
+function cerrarModalConfirm() { document.getElementById('modal-confirm-overlay').classList.remove('visible'); _accionConfirm = null; }
+function ejecutarConfirm() { if (_accionConfirm) _accionConfirm(); cerrarModalConfirm(); }
+document.getElementById('modal-confirm-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) cerrarModalConfirm(); });
+
+function pedirPagar(id) {
+  const c = cheques.find(x => x.id === id);
+  if (!c) return;
+  abrirModalConfirm({
+    icon: '💰', titulo: 'Marcar cheque como pagado',
+    desc: `${c.beneficiario} — $${Number(c.monto).toFixed(2)}. Se registrará como pagado hoy (${formatFecha(hoyISO())}).`,
+    labelBtn: 'Sí, pagar', color: '#00b894',
+    fn: () => {
+      c.pagado = true;
+      c.fechaPago = hoyISO();
+      guardarCheques();
+      mostrarToast('✅ Cheque marcado como pagado');
+      cerrarModal();
+      render();
+    }
+  });
+}
+
+function pedirBorrar(id) {
+  const c = cheques.find(x => x.id === id);
+  if (!c) return;
+  abrirModalConfirm({
+    icon: '🗑️', titulo: 'Eliminar cheque',
+    desc: `¿Eliminar el cheque de ${c.beneficiario} por $${Number(c.monto).toFixed(2)}? Esta acción no se puede deshacer.`,
+    labelBtn: 'Sí, eliminar', color: '#e74c3c',
+    fn: () => {
+      cheques = cheques.filter(x => x.id !== id);
+      guardarCheques();
+      mostrarToast('🗑️ Cheque eliminado');
+      cerrarModal();
+      render();
+    }
+  });
+}
+
+// ── UTILIDADES ────────────────────────────────────────────────────
+function formatFecha(iso) {
+  if (!iso) return '—';
+  const [y,m,d] = iso.split('-');
+  const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  return `${parseInt(d)} ${meses[parseInt(m)-1]} ${y}`;
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
