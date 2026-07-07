@@ -11,7 +11,6 @@
 html { -webkit-text-size-adjust: 100%; }
 body { font-family: 'IBM Plex Sans', sans-serif; display: flex; background: #f0f2f5; min-height: 100vh; overflow-x: hidden; }
 
-/* ===== SIDEBAR ===== */
 .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 900; opacity: 0; transition: opacity 0.25s; }
 .sidebar-overlay.activo { display: block; opacity: 1; }
 .sidebar { width: 240px; max-width: 78vw; background: #1e272e; color: white; height: 100vh; min-height: 100vh; padding: 20px; position: fixed; top: 0; left: 0; flex-shrink: 0; z-index: 950; transform: translateX(-100%); transition: transform 0.28s cubic-bezier(0.4,0,0.2,1); overflow-y: auto; }
@@ -23,7 +22,6 @@ body { font-family: 'IBM Plex Sans', sans-serif; display: flex; background: #f0f
 .nav-link:hover, .nav-link:active { background: #485460; color: white; }
 .nav-link.active { background: #ff3f34; color: white; font-weight: 600; }
 
-/* ===== MAIN ===== */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; width: 100%; }
 .header { background: linear-gradient(135deg, #1e272e 0%, #2f3640 100%); color: white; padding: 14px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 3px solid #ff3f34; position: sticky; top: 0; z-index: 500; flex-wrap: wrap; }
 .hamburger { background: none; border: none; color: white; font-size: 22px; padding: 6px 8px; cursor: pointer; line-height: 1; flex-shrink: 0; }
@@ -45,9 +43,10 @@ body { font-family: 'IBM Plex Sans', sans-serif; display: flex; background: #f0f
 .btn-dark:hover { background: #1e272e; }
 .btn-green { background: #00b894; color: white; }
 .btn-green:hover { background: #00966f; }
+.btn-light { background: #f1f2f6; color: #2d3436; }
+.btn-light:hover { background: #e2e5ea; }
 .btn-sm { padding: 7px 14px; font-size: 13px; min-height: auto; }
 
-/* ===== ALERTAS ===== */
 .alerta-banner { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: 12px; margin-bottom: 12px; font-size: 13.5px; line-height: 1.5; }
 .alerta-vencido { background: #fde8e8; color: #b71c1c; border: 1.5px solid #f5b8b8; }
 .alerta-hoy { background: #fff4e0; color: #a65e00; border: 1.5px solid #ffd699; }
@@ -56,14 +55,12 @@ body { font-family: 'IBM Plex Sans', sans-serif; display: flex; background: #f0f
 .alerta-icon { font-size: 20px; flex-shrink: 0; }
 .alerta-body strong { display: block; margin-bottom: 3px; font-family: 'IBM Plex Mono', monospace; }
 
-/* ===== NAV MES ===== */
 .mes-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
 .mes-nav-btn { background: white; border: 1.5px solid #dfe6e9; color: #2d3436; width: 40px; height: 40px; border-radius: 8px; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .mes-nav-btn:hover { background: #f1f2f6; }
 .mes-nav-titulo { font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 700; color: #1e272e; text-transform: uppercase; flex: 1; text-align: center; }
 .mes-nav-hoy { flex-shrink: 0; }
 
-/* ===== RESUMEN MES ===== */
 .stats-mes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
 .stat-m { background: white; border-radius: 12px; padding: 13px 14px; box-shadow: 0 2px 12px rgba(0,0,0,0.07); border-top: 3px solid #ddd; min-width: 0; }
 .stat-m.total    { border-top-color: #1e272e; }
@@ -73,31 +70,28 @@ body { font-family: 'IBM Plex Sans', sans-serif; display: flex; background: #f0f
 .stat-m-label { font-size: 10px; color: #8395a7; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 5px; line-height: 1.3; }
 .stat-m-val { font-family: 'IBM Plex Mono', monospace; font-size: 18px; font-weight: 700; color: #1e272e; }
 
-/* ===== CALENDARIO ===== */
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
-.cal-dow { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 700; color: #8395a7; text-transform: uppercase; text-align: center; padding-bottom: 4px; }
-.cal-day { background: #fafbfc; border: 1.5px solid #f1f2f6; border-radius: 10px; min-height: 68px; padding: 6px; cursor: pointer; transition: all 0.15s; display: flex; flex-direction: column; gap: 4px; position: relative; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; width: 100%; }
+.cal-dow { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; font-weight: 700; color: #8395a7; text-transform: uppercase; text-align: center; padding-bottom: 4px; min-width: 0; overflow: hidden; }
+.cal-day { background: #fafbfc; border: 1.5px solid #f1f2f6; border-radius: 10px; min-height: 46px; padding: 4px 3px; cursor: pointer; transition: all 0.15s; display: flex; flex-direction: column; gap: 3px; position: relative; min-width: 0; max-width: 100%; overflow: hidden; }
 .cal-day:hover { border-color: #ff3f34; background: white; }
 .cal-day.vacio { background: transparent; border: none; cursor: default; }
 .cal-day.hoy { border-color: #ff3f34; border-width: 2px; }
-.cal-day-num { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; color: #2d3436; }
-.cal-chip { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; font-weight: 700; padding: 2px 5px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-day-num { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; color: #2d3436; }
+.cal-chip { font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 700; padding: 2px 4px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; min-width: 0; }
 .cal-chip.pend  { background: #fde8e8; color: #b71c1c; }
-.cal-chip.pagado{ background: #d4f5e9; color: #00695c; text-decoration: line-through; opacity: 0.8; }
-.cal-day-mas { font-size: 9.5px; color: #8395a7; font-family: 'IBM Plex Mono', monospace; }
+.cal-chip.pagado{ background: #d4f5e9; color: #00695c; }
+.cal-day-mas { font-size: 8.5px; color: #8395a7; font-family: 'IBM Plex Mono', monospace; }
 
-/* ===== NOTAS ===== */
 textarea.notas-mes { width: 100%; min-height: 100px; border: 1.5px solid #dfe6e9; border-radius: 8px; padding: 10px 12px; font-family: 'IBM Plex Sans', sans-serif; font-size: 13.5px; resize: vertical; outline: none; }
 textarea.notas-mes:focus { border-color: #ff3f34; }
 
-/* ===== LISTA CHEQUES (dentro de modal de día / historial) ===== */
 .cheque-fila { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px dashed #f1f2f6; flex-wrap: wrap; }
 .cheque-fila:last-child { border-bottom: none; }
 .cheque-info { flex: 1; min-width: 140px; }
 .cheque-benef { font-size: 13.5px; font-weight: 600; color: #1e272e; }
 .cheque-meta { font-size: 11.5px; color: #8395a7; font-family: 'IBM Plex Mono', monospace; margin-top: 2px; }
 .cheque-monto { font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 700; color: #1e272e; white-space: nowrap; }
-.cheque-badge { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 16px; white-space: nowrap; }
+.cheque-badge { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 16px; white-space: nowrap; display:inline-block; margin-top:4px; }
 .badge-pendiente { background: #fde8e8; color: #b71c1c; }
 .badge-vencido   { background: #e74c3c; color: white; }
 .badge-pagado    { background: #d4f5e9; color: #00695c; }
@@ -111,7 +105,6 @@ textarea.notas-mes:focus { border-color: #ff3f34; }
 .empty-state { text-align: center; padding: 30px 20px; color: #b2bec3; }
 .empty-icon { font-size: 36px; margin-bottom: 8px; }
 
-/* ===== MODAL ===== */
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
 .modal-overlay.visible { display: flex; }
 .modal-box { background: white; border-radius: 16px; padding: 22px; width: min(460px, 100%); box-shadow: 0 20px 60px rgba(0,0,0,0.25); animation: slideUp 0.25s cubic-bezier(0.34,1.56,0.64,1); max-height: 90vh; overflow-y: auto; }
@@ -135,6 +128,10 @@ textarea.notas-mes:focus { border-color: #ff3f34; }
 
 .toast { position: fixed; bottom: 28px; right: 28px; background: #2d3436; color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); transform: translateY(80px); opacity: 0; transition: all 0.35s cubic-bezier(0.34,1.56,0.64,1); z-index: 3000; }
 .toast.visible { transform: translateY(0); opacity: 1; }
+
+.estado-archivo { display:flex; align-items:center; gap:8px; font-size:12.5px; padding:9px 12px; border-radius:8px; margin-bottom:10px; }
+.estado-archivo.conectado { background:#d4f5e9; color:#00695c; }
+.estado-archivo.desconectado { background:#f1f2f6; color:#636e72; }
 
 @media (max-width: 768px) {
   .cal-day { min-height: 54px; padding: 4px; }
@@ -179,7 +176,7 @@ textarea.notas-mes:focus { border-color: #ff3f34; }
   <a href="bodega.html" class="nav-link">📦 Bodega</a>
   <a href="vencimientos.html" class="nav-link">⏳ Vencimientos</a>
   <a href="cuentas_cobrar.html" class="nav-link">💸 Cuentas por Cobrar</a>
-   <a href="calendario.html" class="nav-link">calendario</a>
+  <a href="calendario.html" class="nav-link active">🧾 Cheques por Pagar</a>
 </div>
 
 <div class="main">
@@ -225,6 +222,20 @@ textarea.notas-mes:focus { border-color: #ff3f34; }
       </div>
 
       <div class="col-side">
+        <div class="card">
+          <div class="card-title"><span>💾 Guardado</span></div>
+          <div class="estado-archivo desconectado" id="estado-archivo">📌 Guardando en este navegador (localStorage)</div>
+          <div style="font-size:12.5px;color:#8395a7;margin-bottom:12px;line-height:1.5;">
+            Tus cheques ya se guardan automáticamente en este navegador. Para que <strong>nunca se pierdan aunque borres el caché</strong>, conecta un archivo real en tu computadora — cada cambio se guardará ahí también, al instante.
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <button class="btn btn-dark" id="btn-conectar-archivo" onclick="conectarArchivo()">🔗 Guardar en un archivo de mi PC</button>
+            <button class="btn btn-light" onclick="descargarRespaldo()">⬇️ Descargar respaldo (.json)</button>
+            <button class="btn btn-light" onclick="document.getElementById('input-restaurar').click()">⬆️ Restaurar desde respaldo</button>
+            <input type="file" id="input-restaurar" accept=".json" style="display:none;" onchange="restaurarRespaldo(event)">
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-title"><span>🗒️ Notas</span></div>
           <textarea class="notas-mes" id="notas-mes" placeholder="Escribe notas para este mes..." onchange="guardarNotas()"></textarea>
@@ -301,28 +312,167 @@ textarea.notas-mes:focus { border-color: #ff3f34; }
 <script>
 // ── ESTADO ────────────────────────────────────────────────────────
 const STORAGE_KEY = 'contanexus_cheques';
-const NOTAS_KEY    = 'contanexus_cheques_notas';
-const ALERT_KEY    = 'contanexus_cheques_ultima_alerta';
+const NOTAS_KEY   = 'contanexus_cheques_notas';
+const ALERT_KEY   = 'contanexus_cheques_ultima_alerta';
+const HANDLE_DB   = 'contanexus_handles';
 
 let cheques = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
 let notas   = JSON.parse(localStorage.getItem(NOTAS_KEY) || '{}');
 let hoy     = new Date();
 let vistaAno = hoy.getFullYear();
-let vistaMes = hoy.getMonth(); // 0-11
+let vistaMes = hoy.getMonth();
 let diaSeleccionado = null;
 let _accionConfirm = null;
+let fileHandle = null; // FileSystemFileHandle conectado (si el navegador lo soporta)
 
 document.getElementById('txt-fecha').textContent =
   hoy.toLocaleDateString('es-EC', { day:'2-digit', month:'2-digit', year:'numeric' });
 
-function guardarCheques() { localStorage.setItem(STORAGE_KEY, JSON.stringify(cheques)); }
-function guardarNotas() {
-  const key = claveMes(vistaAno, vistaMes);
-  notas[key] = document.getElementById('notas-mes').value;
-  localStorage.setItem(NOTAS_KEY, JSON.stringify(notas));
-}
 function claveMes(a,m) { return a + '-' + String(m+1).padStart(2,'0'); }
 function hoyISO() { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
+// ── GUARDADO (localStorage siempre + archivo real si está conectado) ──
+function estadoActual() { return { cheques, notas }; }
+
+function guardarLocal() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(cheques));
+  localStorage.setItem(NOTAS_KEY, JSON.stringify(notas));
+}
+
+async function guardarEnArchivo() {
+  if (!fileHandle) return;
+  try {
+    const writable = await fileHandle.createWritable();
+    await writable.write(JSON.stringify(estadoActual(), null, 2));
+    await writable.close();
+  } catch (e) {
+    console.warn('No se pudo guardar en el archivo conectado:', e);
+    mostrarToast('⚠️ No se pudo guardar en el archivo conectado');
+  }
+}
+
+function guardarTodo() {
+  guardarLocal();
+  guardarEnArchivo();
+}
+function guardarCheques() { guardarTodo(); }
+function guardarNotas() {
+  notas[claveMes(vistaAno, vistaMes)] = document.getElementById('notas-mes').value;
+  guardarTodo();
+}
+
+// ── CONECTAR ARCHIVO REAL EN EL PC (File System Access API) ──────
+function idbAbrir() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(HANDLE_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('handles');
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+async function idbGuardarHandle(handle) {
+  const db = await idbAbrir();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').put(handle, 'archivo_cheques');
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbLeerHandle() {
+  const db = await idbAbrir();
+  return new Promise((res) => {
+    const tx = db.transaction('handles', 'readonly');
+    const req = tx.objectStore('handles').get('archivo_cheques');
+    req.onsuccess = () => res(req.result || null);
+    req.onerror = () => res(null);
+  });
+}
+
+function actualizarEstadoArchivoUI(conectado, nombre) {
+  const el = document.getElementById('estado-archivo');
+  const btn = document.getElementById('btn-conectar-archivo');
+  if (conectado) {
+    el.className = 'estado-archivo conectado';
+    el.textContent = '✅ Guardando también en: ' + nombre;
+    btn.textContent = '🔄 Cambiar archivo conectado';
+  } else {
+    el.className = 'estado-archivo desconectado';
+    el.textContent = '📌 Guardando en este navegador (localStorage)';
+    btn.textContent = '🔗 Guardar en un archivo de mi PC';
+  }
+}
+
+async function conectarArchivo() {
+  if (!window.showSaveFilePicker) {
+    mostrarToast('⚠️ Tu navegador no soporta esta función (usa Chrome o Edge en computadora)');
+    return;
+  }
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: 'cheques_datos.json',
+      types: [{ description: 'Datos de Cheques', accept: { 'application/json': ['.json'] } }]
+    });
+    fileHandle = handle;
+    await idbGuardarHandle(handle);
+    await guardarEnArchivo();
+    actualizarEstadoArchivoUI(true, handle.name);
+    mostrarToast('🔗 Archivo conectado — se guardará ahí automáticamente');
+  } catch (e) {
+    if (e.name !== 'AbortError') mostrarToast('⚠️ No se pudo conectar el archivo');
+  }
+}
+
+async function intentarReconectarArchivo() {
+  if (!window.showSaveFilePicker) return; // navegador sin soporte
+  try {
+    const handle = await idbLeerHandle();
+    if (!handle) return;
+    const permiso = await handle.queryPermission({ mode: 'readwrite' });
+    if (permiso === 'granted') {
+      fileHandle = handle;
+      actualizarEstadoArchivoUI(true, handle.name);
+    } else {
+      // Necesita un clic del usuario para volver a pedir permiso; dejamos el botón normal.
+      actualizarEstadoArchivoUI(false);
+    }
+  } catch (e) { /* sin handle guardado aún */ }
+}
+
+// ── RESPALDO MANUAL (sin contraseña) ─────────────────────────────
+function descargarRespaldo() {
+  const payload = { app: 'contanexus_cheques', version: 1, ...estadoActual() };
+  const archivo = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(archivo);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `contanexus_cheques_respaldo_${hoyISO()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  mostrarToast('⬇️ Respaldo descargado');
+}
+
+function restaurarRespaldo(event) {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      cheques = data.cheques || [];
+      notas = data.notas || {};
+      guardarTodo();
+      mostrarToast('✅ Respaldo restaurado correctamente');
+      render();
+    } catch (e) {
+      mostrarToast('⚠️ El archivo de respaldo no es válido');
+    }
+  };
+  reader.readAsText(file);
+}
 
 // ── MENÚ MÓVIL ────────────────────────────────────────────────────
 function abrirMenu() { document.getElementById('sidebar').classList.add('activo'); document.getElementById('sidebarOverlay').classList.add('activo'); document.body.style.overflow='hidden'; }
@@ -395,7 +545,7 @@ function notificarSiCorresponde(cantidadUrgente) {
   if (cantidadUrgente <= 0) return;
   const ultima = localStorage.getItem(ALERT_KEY);
   const iso = hoyISO();
-  if (ultima === iso) return; // ya se notificó hoy
+  if (ultima === iso) return;
   localStorage.setItem(ALERT_KEY, iso);
   if ('Notification' in window) {
     if (Notification.permission === 'granted') {
@@ -412,7 +562,7 @@ function renderCalendario() {
   document.getElementById('cal-dow').innerHTML = DOW.map(d=>`<div class="cal-dow">${d}</div>`).join('');
 
   const primerDia = new Date(vistaAno, vistaMes, 1);
-  const inicioSemana = primerDia.getDay(); // 0=Dom
+  const inicioSemana = primerDia.getDay();
   const diasEnMes = new Date(vistaAno, vistaMes+1, 0).getDate();
   const iso = hoyISO();
 
@@ -433,13 +583,16 @@ function renderCalendario() {
     const fechaISO = vistaAno+'-'+String(vistaMes+1).padStart(2,'0')+'-'+String(dia).padStart(2,'0');
     const lista = porDia[dia] || [];
     const esHoy = fechaISO === iso;
-    const visibles = lista.slice(0,2);
-    const restantes = lista.length - visibles.length;
+
+    // Resumen fijo (máx. 2 líneas), sin importar cuántos cheques tenga el día:
+    // así la celda solo crece hacia abajo un poco, nunca hacia los lados.
+    const montoPendiente = lista.filter(c=>!c.pagado).reduce((s,c)=>s+Number(c.monto),0);
+    const montoPagado    = lista.filter(c=>c.pagado).reduce((s,c)=>s+Number(c.monto),0);
 
     html += `<div class="cal-day ${esHoy ? 'hoy' : ''}" onclick="abrirModalDia('${fechaISO}')">
-      <div class="cal-day-num">${dia}</div>
-      ${visibles.map(c => `<div class="cal-chip ${c.pagado?'pagado':'pend'}">$${Number(c.monto).toFixed(0)} ${c.beneficiario.slice(0,10)}</div>`).join('')}
-      ${restantes > 0 ? `<div class="cal-day-mas">+${restantes} más</div>` : ''}
+      <div class="cal-day-num">${dia}${lista.length ? ` · ${lista.length}` : ''}</div>
+      ${montoPendiente > 0 ? `<div class="cal-chip pend">$${montoPendiente.toFixed(0)}</div>` : ''}
+      ${montoPagado > 0 ? `<div class="cal-chip pagado">✅ $${montoPagado.toFixed(0)}</div>` : ''}
     </div>`;
   }
   document.getElementById('cal-grid').innerHTML = html;
@@ -564,7 +717,7 @@ function guardarCheque(e) {
     cheques.push({ id: 'ch_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), pagado:false, fechaPago:null, ...data });
     mostrarToast('✅ Cheque agregado');
   }
-  guardarCheques();
+  guardarTodo();
   cerrarModal();
   vistaAno = Number(data.fecha.split('-')[0]);
   vistaMes = Number(data.fecha.split('-')[1]) - 1;
@@ -596,7 +749,7 @@ function pedirPagar(id) {
     fn: () => {
       c.pagado = true;
       c.fechaPago = hoyISO();
-      guardarCheques();
+      guardarTodo();
       mostrarToast('✅ Cheque marcado como pagado');
       cerrarModal();
       render();
@@ -613,7 +766,7 @@ function pedirBorrar(id) {
     labelBtn: 'Sí, eliminar', color: '#e74c3c',
     fn: () => {
       cheques = cheques.filter(x => x.id !== id);
-      guardarCheques();
+      guardarTodo();
       mostrarToast('🗑️ Cheque eliminado');
       cerrarModal();
       render();
@@ -630,6 +783,7 @@ function formatFecha(iso) {
 }
 
 // ── INIT ──────────────────────────────────────────────────────────
+intentarReconectarArchivo();
 render();
 </script>
 </body>
