@@ -128,10 +128,13 @@ textarea.notas-mes:focus { border-color: #ff3f34; }
 
 .toast { position: fixed; bottom: 28px; right: 28px; background: #2d3436; color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); transform: translateY(80px); opacity: 0; transition: all 0.35s cubic-bezier(0.34,1.56,0.64,1); z-index: 3000; }
 .toast.visible { transform: translateY(0); opacity: 1; }
+.toast.error { background: #b71c1c; }
 
 .estado-archivo { display:flex; align-items:center; gap:8px; font-size:12.5px; padding:9px 12px; border-radius:8px; margin-bottom:10px; }
 .estado-archivo.conectado { background:#d4f5e9; color:#00695c; }
-.estado-archivo.desconectado { background:#f1f2f6; color:#636e72; }
+.estado-archivo.desconectado { background:#fde8e8; color:#b71c1c; }
+
+.spinner-overlay { display:flex; align-items:center; justify-content:center; padding:40px 0; color:#8395a7; font-size:13px; gap:8px; }
 
 @media (max-width: 768px) {
   .cal-day { min-height: 54px; padding: 4px; }
@@ -192,6 +195,7 @@ textarea.notas-mes:focus { border-color: #ff3f34; }
 
   <div class="contenido">
 
+    <div id="zona-estado"></div>
     <div id="zona-alertas"></div>
 
     <div class="contenido-flex">
@@ -274,7 +278,7 @@ textarea.notas-mes:focus { border-color: #ff3f34; }
       </div>
       <div class="modal-btns">
         <button type="button" class="btn-cancel" onclick="cerrarModal()">Cancelar</button>
-        <button type="submit" class="btn-confirm" style="background:#ff3f34;">Guardar cheque</button>
+        <button type="submit" class="btn-confirm" style="background:#ff3f34;" id="btn-guardar-cheque">Guardar cheque</button>
       </div>
     </form>
   </div>
@@ -301,18 +305,19 @@ const API = location.hostname === 'localhost' || location.hostname === '127.0.0.
   ? 'http://localhost:3000'
   : 'https://app-zobz.onrender.com';
 
-// ── ESTADO ────────────────────────────────────────────────────────
-const STORAGE_KEY = 'contanexus_cheques';
-const NOTAS_KEY   = 'contanexus_cheques_notas';
-const ALERT_KEY   = 'contanexus_cheques_ultima_alerta';
+function apiUrl(path) {
+  return API.replace(/\/$/, '') + path;
+}
 
-let cheques = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-let notas   = JSON.parse(localStorage.getItem(NOTAS_KEY) || '{}');
+// ── ESTADO (ahora la fuente de verdad es la base de datos, no localStorage) ─
+let cheques = [];   // se llena desde GET /cheques
+let notas   = {};   // se llena desde GET /cheques-notas
 let hoy     = new Date();
 let vistaAno = hoy.getFullYear();
 let vistaMes = hoy.getMonth();
 let diaSeleccionado = null;
 let _accionConfirm = null;
+let cargando = true;
 
 document.getElementById('txt-fecha').textContent =
   hoy.toLocaleDateString('es-EC', { day:'2-digit', month:'2-digit', year:'numeric' });
@@ -320,21 +325,46 @@ document.getElementById('txt-fecha').textContent =
 function claveMes(a,m) { return a + '-' + String(m+1).padStart(2,'0'); }
 function hoyISO() { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 
-// ── GUARDADO (localStorage) ────────────────────────────────────────
-function estadoActual() { return { cheques, notas }; }
-
-function guardarLocal() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(cheques));
-  localStorage.setItem(NOTAS_KEY, JSON.stringify(notas));
+// ── ESTADO DE CONEXIÓN ───────────────────────────────────────────
+function mostrarEstadoConexion(conectado) {
+  const zona = document.getElementById('zona-estado');
+  if (conectado) {
+    zona.innerHTML = ''; // si todo funciona, no mostramos nada para no saturar la UI
+  } else {
+    zona.innerHTML = `<div class="estado-archivo desconectado">⚠️ No se pudo conectar con la base de datos (${apiUrl('')}). Verifica tu conexión o que el servidor esté activo.</div>`;
+  }
 }
 
-function guardarTodo() {
-  guardarLocal();
-}
-function guardarCheques() { guardarTodo(); }
-function guardarNotas() {
-  notas[claveMes(vistaAno, vistaMes)] = document.getElementById('notas-mes').value;
-  guardarTodo();
+// ── CARGA INICIAL DESDE LA BASE DE DATOS ─────────────────────────
+async function cargarDatos() {
+  cargando = true;
+  document.getElementById('cal-grid').innerHTML = '<div class="spinner-overlay">Cargando cheques desde la base de datos...</div>';
+  try {
+    const [respCheques, respNotas] = await Promise.all([
+      fetch(apiUrl('/cheques')),
+      fetch(apiUrl('/cheques-notas'))
+    ]);
+
+    if (!respCheques.ok || !respNotas.ok) throw new Error('Respuesta no válida del servidor');
+
+    const dataCheques = await respCheques.json();
+    const dataNotas   = await respNotas.json();
+
+    // El backend usa Firestore y devuelve el id del documento como _id
+    cheques = (Array.isArray(dataCheques) ? dataCheques : []).map(c => ({ ...c, id: c._id }));
+    notas   = dataNotas && typeof dataNotas === 'object' ? dataNotas : {};
+
+    mostrarEstadoConexion(true);
+  } catch (err) {
+    console.error('Error al cargar datos desde la base de datos:', err);
+    mostrarEstadoConexion(false);
+    mostrarToast('⚠️ No se pudo cargar la información de la base de datos', true);
+    cheques = [];
+    notas = {};
+  } finally {
+    cargando = false;
+    render();
+  }
 }
 
 // ── MENÚ MÓVIL ────────────────────────────────────────────────────
@@ -342,9 +372,11 @@ function abrirMenu() { document.getElementById('sidebar').classList.add('activo'
 function cerrarMenu() { document.getElementById('sidebar').classList.remove('activo'); document.getElementById('sidebarOverlay').classList.remove('activo'); document.body.style.overflow=''; }
 
 // ── TOAST ─────────────────────────────────────────────────────────
-function mostrarToast(msg) {
+function mostrarToast(msg, esError) {
   const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('visible');
+  t.textContent = msg;
+  t.classList.toggle('error', !!esError);
+  t.classList.add('visible');
   setTimeout(()=>t.classList.remove('visible'), 3200);
 }
 
@@ -391,7 +423,7 @@ function renderAlertas() {
   if (proximos.length) {
     html += `<div class="alerta-banner alerta-proximo"><div class="alerta-icon">📆</div><div class="alerta-body"><strong>${proximos.length} cheque(s) por vencer en los próximos 3 días</strong>${proximos.map(c=>`${c.beneficiario} · ${formatFecha(c.fecha)} · $${Number(c.monto).toFixed(2)}`).join(' · ')}</div></div>`;
   }
-  if (!vencidos.length && !hoyMismo.length && !proximos.length) {
+  if (!vencidos.length && !hoyMismo.length && !proximos.length && !cargando) {
     html += `<div class="alerta-banner alerta-ok"><div class="alerta-icon">✅</div><div class="alerta-body"><strong>Todo al día</strong>No tienes cheques vencidos ni próximos a vencer en los siguientes 3 días.</div></div>`;
   }
   zona.innerHTML = html;
@@ -406,6 +438,7 @@ function sumarDias(iso, n) {
 
 function notificarSiCorresponde(cantidadUrgente) {
   if (cantidadUrgente <= 0) return;
+  const ALERT_KEY = 'contanexus_cheques_ultima_alerta'; // esto sí puede quedarse local, es solo para no repetir la notificación del navegador
   const ultima = localStorage.getItem(ALERT_KEY);
   const iso = hoyISO();
   if (ultima === iso) return;
@@ -477,7 +510,7 @@ function renderStats() {
 }
 
 function renderHistorial() {
-  const pagados = cheques.filter(c=>c.pagado).sort((a,b)=>b.fechaPago.localeCompare(a.fechaPago));
+  const pagados = cheques.filter(c=>c.pagado).sort((a,b)=>(b.fechaPago||'').localeCompare(a.fechaPago||''));
   const cont = document.getElementById('lista-historial');
   if (!pagados.length) {
     cont.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>Aún no hay cheques pagados</p></div>';
@@ -560,7 +593,8 @@ function editarCheque(id) {
 function cerrarModal() { document.getElementById('modal-overlay').classList.remove('visible'); }
 document.getElementById('modal-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) cerrarModal(); });
 
-function guardarCheque(e) {
+// ── GUARDAR CHEQUE (crea o edita) → va directo a la base de datos ─
+async function guardarCheque(e) {
   e.preventDefault();
   const id = document.getElementById('f-id').value;
   const data = {
@@ -569,21 +603,50 @@ function guardarCheque(e) {
     fecha: document.getElementById('f-fecha').value,
     numero: document.getElementById('f-numero').value.trim(),
     notas: document.getElementById('f-notas').value.trim(),
-    actualizadoEn: Date.now(),
   };
-  if (id) {
-    const c = cheques.find(x => x.id === id);
-    Object.assign(c, data);
-    mostrarToast('✏️ Cheque actualizado');
-  } else {
-    cheques.push({ id: 'ch_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), pagado:false, fechaPago:null, ...data });
-    mostrarToast('✅ Cheque agregado');
+
+  const btn = document.getElementById('btn-guardar-cheque');
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  try {
+    if (id) {
+      // Editar cheque existente
+      const resp = await fetch(apiUrl(`/cheques/${id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!resp.ok) throw new Error('El servidor rechazó la edición');
+
+      const c = cheques.find(x => x.id === id);
+      if (c) Object.assign(c, data);
+      mostrarToast('✏️ Cheque actualizado en la base de datos');
+    } else {
+      // Crear cheque nuevo
+      const resp = await fetch(apiUrl('/cheques'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!resp.ok) throw new Error('El servidor rechazó la creación');
+      const result = await resp.json();
+
+      cheques.push({ ...(result.cheque || data), id: (result.cheque && result.cheque._id) || (result.cheque && result.cheque.id), pagado:false, fechaPago:null });
+      mostrarToast('✅ Cheque guardado en la base de datos');
+    }
+
+    cerrarModal();
+    vistaAno = Number(data.fecha.split('-')[0]);
+    vistaMes = Number(data.fecha.split('-')[1]) - 1;
+    render();
+  } catch (err) {
+    console.error('Error al guardar cheque:', err);
+    mostrarToast('⚠️ No se pudo guardar el cheque en la base de datos', true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Guardar cheque';
   }
-  guardarTodo();
-  cerrarModal();
-  vistaAno = Number(data.fecha.split('-')[0]);
-  vistaMes = Number(data.fecha.split('-')[1]) - 1;
-  render();
 }
 
 // ── CONFIRMACIONES (pagar / borrar) ──────────────────────────────
@@ -608,14 +671,25 @@ function pedirPagar(id) {
     icon: '💰', titulo: 'Marcar cheque como pagado',
     desc: `${c.beneficiario} — $${Number(c.monto).toFixed(2)}. Se registrará como pagado hoy (${formatFecha(hoyISO())}).`,
     labelBtn: 'Sí, pagar', color: '#00b894',
-    fn: () => {
-      c.pagado = true;
-      c.fechaPago = hoyISO();
-      c.actualizadoEn = Date.now();
-      guardarTodo();
-      mostrarToast('✅ Cheque marcado como pagado');
-      cerrarModal();
-      render();
+    fn: async () => {
+      const fechaPago = hoyISO();
+      try {
+        const resp = await fetch(apiUrl(`/cheques/pagar/${id}`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fechaPago })
+        });
+        if (!resp.ok) throw new Error('El servidor rechazó el pago');
+
+        c.pagado = true;
+        c.fechaPago = fechaPago;
+        mostrarToast('✅ Cheque marcado como pagado en la base de datos');
+        cerrarModal();
+        render();
+      } catch (err) {
+        console.error('Error al marcar como pagado:', err);
+        mostrarToast('⚠️ No se pudo registrar el pago en la base de datos', true);
+      }
     }
   });
 }
@@ -627,14 +701,41 @@ function pedirBorrar(id) {
     icon: '🗑️', titulo: 'Eliminar cheque',
     desc: `¿Eliminar el cheque de ${c.beneficiario} por $${Number(c.monto).toFixed(2)}? Esta acción no se puede deshacer.`,
     labelBtn: 'Sí, eliminar', color: '#e74c3c',
-    fn: () => {
-      cheques = cheques.filter(x => x.id !== id);
-      guardarTodo();
-      mostrarToast('🗑️ Cheque eliminado');
-      cerrarModal();
-      render();
+    fn: async () => {
+      try {
+        const resp = await fetch(apiUrl(`/cheques/${id}`), { method: 'DELETE' });
+        if (!resp.ok) throw new Error('El servidor rechazó la eliminación');
+
+        cheques = cheques.filter(x => x.id !== id);
+        mostrarToast('🗑️ Cheque eliminado de la base de datos');
+        cerrarModal();
+        render();
+      } catch (err) {
+        console.error('Error al eliminar cheque:', err);
+        mostrarToast('⚠️ No se pudo eliminar el cheque de la base de datos', true);
+      }
     }
   });
+}
+
+// ── NOTAS DEL MES → va directo a la base de datos ────────────────
+async function guardarNotas() {
+  const mes = claveMes(vistaAno, vistaMes);
+  const texto = document.getElementById('notas-mes').value;
+  notas[mes] = texto; // optimista: se actualiza ya en pantalla
+
+  try {
+    const resp = await fetch(apiUrl(`/cheques-notas/${mes}`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texto })
+    });
+    if (!resp.ok) throw new Error('El servidor rechazó el guardado de la nota');
+    mostrarToast('🗒️ Nota guardada en la base de datos');
+  } catch (err) {
+    console.error('Error al guardar nota:', err);
+    mostrarToast('⚠️ No se pudo guardar la nota en la base de datos', true);
+  }
 }
 
 // ── UTILIDADES ────────────────────────────────────────────────────
@@ -646,7 +747,7 @@ function formatFecha(iso) {
 }
 
 // ── INIT ──────────────────────────────────────────────────────────
-render();
+cargarDatos();
 </script>
 </body>
 </html>
