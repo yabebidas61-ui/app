@@ -1,0 +1,14 @@
+{
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "firebase-admin": "^13.10.0",
+    "mongoose": "^9.6.3",
+    "nodemailer": "^8.0.10",
+    "resend": "^6.12.4"
+  },
+  "devDependencies": {
+    "electron": "^42.3.2"
+  }
+}
