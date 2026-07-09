@@ -3,6 +3,7 @@ const express = require('express');
 const cors    = require('cors');
 const admin   = require('firebase-admin');
 const multer  = require('multer');
+const { v2: cloudinary } = require('cloudinary');
 
 const app = express();
 
@@ -22,8 +23,7 @@ if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
 try {
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
   admin.initializeApp({
-    credential:    admin.credential.cert(serviceAccount),
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${serviceAccount.project_id}.appspot.com`
+    credential: admin.credential.cert(serviceAccount)
   });
   console.log("✅ ¡Conectado exitosamente a Firebase Cloud Firestore!");
 } catch (error) {
@@ -31,8 +31,21 @@ try {
   process.exit(1);
 }
 
-const db     = admin.firestore();
-const bucket = admin.storage().bucket();
+const db = admin.firestore();
+
+// =========================================================================
+// 1.b CONFIGURACIÓN DE CLOUDINARY (almacenamiento de archivos)
+// =========================================================================
+if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+  console.warn("⚠️ Cloudinary no configurado (faltan variables CLOUDINARY_*). El módulo de Archivos no funcionará hasta configurarlas.");
+} else {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key:    process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+  });
+  console.log("☁️ Cloudinary configurado. Listo para subir archivos.");
+}
 
 // =========================================================================
 // 2. CONFIGURACIÓN DE BREVO (API HTTP)
@@ -1687,22 +1700,19 @@ function hoyISOServidor() {
 }
 
 // =========================================================================
-// ARCHIVOS — GESTOR TIPO GOOGLE DRIVE (Firebase Storage + Firestore)
+// ARCHIVOS — GESTOR TIPO GOOGLE DRIVE (Cloudinary para archivos + Firestore
+// para metadatos: nombre, carpeta, url, tipo, tamaño).
 //
-// Requiere la variable de entorno FIREBASE_STORAGE_BUCKET en Render con el
-// nombre exacto del bucket (Firebase Console → Storage), si tu bucket no
-// sigue el patrón por defecto "<proyecto>.appspot.com".
+// Requiere las variables de entorno en Render:
+//   CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
+// (se obtienen gratis creando una cuenta en https://cloudinary.com, sin
+// tarjeta — están en el Dashboard al iniciar sesión).
 // =========================================================================
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits:  { fileSize: 100 * 1024 * 1024 } // 100MB por archivo
 });
-
-// Helper: arma la URL pública de un objeto en el bucket
-function urlPublica(path) {
-  return `https://storage.googleapis.com/${bucket.name}/${encodeURI(path)}`;
-}
 
 // Lista carpetas + archivos dentro de una carpeta (o raíz si no se pasa "carpeta")
 app.get('/archivos', async (req, res) => {
@@ -1763,40 +1773,45 @@ app.post('/archivos/carpeta', async (req, res) => {
   }
 });
 
+// Helper: sube un buffer a Cloudinary usando upload_stream (envuelto en Promise)
+function subirBufferACloudinary(buffer, opciones) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(opciones, (err, resultado) => {
+      if (err) return reject(err);
+      resolve(resultado);
+    });
+    stream.end(buffer);
+  });
+}
+
 // Sube un archivo (multipart/form-data: campo "archivo" + campo "carpetaId")
 app.post('/archivos/subir', upload.single('archivo'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
+    if (!process.env.CLOUDINARY_CLOUD_NAME) {
+      return res.status(503).json({ error: 'Cloudinary no está configurado en el servidor (faltan variables CLOUDINARY_*)' });
+    }
 
     const carpetaId  = req.body.carpetaId && req.body.carpetaId !== 'null' ? req.body.carpetaId : null;
     const nombreOrig = req.file.originalname;
     const timestamp  = Date.now();
-    const rutaStorage = `archivos/${carpetaId || 'raiz'}/${timestamp}-${nombreOrig}`;
+    const carpetaCloudinary = `archivos/${carpetaId || 'raiz'}`;
 
-    const archivoStorage = bucket.file(rutaStorage);
-    await archivoStorage.save(req.file.buffer, {
-      metadata: { contentType: req.file.mimetype || 'application/octet-stream' }
+    const resultadoSubida = await subirBufferACloudinary(req.file.buffer, {
+      folder:        carpetaCloudinary,
+      public_id:     `${timestamp}-${nombreOrig}`.replace(/\.[^/.]+$/, ''), // sin extensión, Cloudinary la maneja aparte
+      resource_type: 'auto' // detecta automáticamente imagen/video/pdf/etc.
     });
 
-    // Hace el objeto públicamente legible para poder verlo con un link directo.
-    // Si tu bucket tiene "Acceso uniforme a nivel de bucket" activado, esta llamada
-    // puede fallar (Firebase Storage lo activa por defecto en proyectos nuevos).
-    // En ese caso, ve a Google Cloud Console → Storage → tu bucket → Permisos
-    // y agrega el rol "Storage Object Viewer" al miembro "allUsers".
-    try {
-      await archivoStorage.makePublic();
-    } catch (e) {
-      console.warn('⚠️ No se pudo hacer público el archivo automáticamente:', e.message);
-    }
-
     const nuevoRegistro = {
-      nombre:       nombreOrig,
+      nombre:      nombreOrig,
       carpetaId,
-      storagePath:  rutaStorage,
-      url:          urlPublica(rutaStorage),
-      tipo:         req.file.mimetype || 'application/octet-stream',
-      tamano:       req.file.size,
-      creadoEn:     timestamp
+      publicId:    resultadoSubida.public_id,
+      resourceType: resultadoSubida.resource_type,
+      url:         resultadoSubida.secure_url,
+      tipo:        req.file.mimetype || 'application/octet-stream',
+      tamano:      req.file.size,
+      creadoEn:    timestamp
     };
 
     const resultado = await db.collection('archivos').add(nuevoRegistro);
@@ -1815,9 +1830,9 @@ app.delete('/archivos/:id', async (req, res) => {
     if (!doc.exists) return res.status(404).json({ error: 'Archivo no encontrado' });
 
     const data = doc.data();
-    if (data.storagePath) {
-      await bucket.file(data.storagePath).delete().catch(e =>
-        console.warn('⚠️ No se pudo borrar el objeto en Storage:', e.message)
+    if (data.publicId) {
+      await cloudinary.uploader.destroy(data.publicId, { resource_type: data.resourceType || 'image' }).catch(e =>
+        console.warn('⚠️ No se pudo borrar el objeto en Cloudinary:', e.message)
       );
     }
     await docRef.delete();
@@ -1837,8 +1852,8 @@ async function borrarCarpetaRecursiva(carpetaId) {
 
   for (const doc of archivosSnap.docs) {
     const data = doc.data();
-    if (data.storagePath) {
-      await bucket.file(data.storagePath).delete().catch(() => {});
+    if (data.publicId) {
+      await cloudinary.uploader.destroy(data.publicId, { resource_type: data.resourceType || 'image' }).catch(() => {});
     }
     await doc.ref.delete();
   }
