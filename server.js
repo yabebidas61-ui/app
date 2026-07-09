@@ -1681,6 +1681,219 @@ function hoyISOServidor() {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+/* ==========================================================================
+   INSTRUCCIONES DE INSTALACIÓN
+   ==========================================================================
+   1) En tu terminal, dentro de la carpeta del backend, instala multer:
+
+        npm install multer
+
+   2) Abre tu server.js y haz estos 3 cambios:
+
+   ----------------------------------------------------------------------
+   CAMBIO A) Al inicio del archivo, junto a los demás require:
+   ----------------------------------------------------------------------
+      const multer = require('multer');
+
+   ----------------------------------------------------------------------
+   CAMBIO B) Donde inicializas Firebase Admin (bloque "1. CONFIGURACIÓN DE
+   FIREBASE ADMIN SDK"), reemplaza:
+
+      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+
+   por:
+
+      admin.initializeApp({
+        credential:     admin.credential.cert(serviceAccount),
+        storageBucket:  process.env.FIREBASE_STORAGE_BUCKET || `${serviceAccount.project_id}.appspot.com`
+      });
+
+   Y justo debajo de "const db = admin.firestore();" agrega:
+
+      const bucket = admin.storage().bucket();
+
+   NOTA: Si tu bucket de Storage tiene un nombre distinto al default
+   "<proyecto>.appspot.com", agrega la variable de entorno
+   FIREBASE_STORAGE_BUCKET en Render con el nombre exacto de tu bucket
+   (lo ves en Firebase Console → Storage, algo como "mi-proyecto.firebasestorage.app").
+
+   ----------------------------------------------------------------------
+   CAMBIO C) Pega TODO el bloque de abajo (desde "const upload = multer"
+   hasta el final del archivo) en cualquier parte de tu server.js, antes
+   de la sección "6. INICIALIZACIÓN" (antes de app.listen).
+   ----------------------------------------------------------------------
+*/
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits:  { fileSize: 100 * 1024 * 1024 } // 100MB por archivo
+});
+
+// =========================================================================
+// ARCHIVOS — GESTOR TIPO GOOGLE DRIVE (Firebase Storage + Firestore)
+// =========================================================================
+
+// Helper: arma la URL pública de un objeto en el bucket
+function urlPublica(path) {
+  return `https://storage.googleapis.com/${bucket.name}/${encodeURI(path)}`;
+}
+
+// Lista carpetas + archivos dentro de una carpeta (o raíz si no se pasa "carpeta")
+app.get('/archivos', async (req, res) => {
+  try {
+    const carpetaId = req.query.carpeta || null;
+
+    const [carpetasSnap, archivosSnap] = await Promise.all([
+      db.collection('carpetas').where('parentId', '==', carpetaId).get(),
+      db.collection('archivos').where('carpetaId', '==', carpetaId).get()
+    ]);
+
+    const carpetas = mapearDocs(carpetasSnap).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+    const archivos = mapearDocs(archivosSnap).sort((a, b) => (b.creadoEn || 0) - (a.creadoEn || 0));
+
+    res.json({ carpetas, archivos });
+  } catch (err) {
+    console.error('❌ Error al listar archivos:', err.message);
+    res.status(500).json({ error: 'No se pudo leer el contenido de la carpeta' });
+  }
+});
+
+// Devuelve la cadena de carpetas padres (breadcrumb) de una carpeta dada
+app.get('/archivos/ruta/:id', async (req, res) => {
+  try {
+    const ruta = [];
+    let actualId = req.params.id;
+    let vueltas = 0;
+
+    while (actualId && actualId !== 'null' && vueltas < 30) {
+      const doc = await db.collection('carpetas').doc(actualId).get();
+      if (!doc.exists) break;
+      const data = doc.data();
+      ruta.unshift({ _id: doc.id, nombre: data.nombre });
+      actualId = data.parentId;
+      vueltas++;
+    }
+
+    res.json(ruta);
+  } catch (err) {
+    console.error('❌ Error al armar la ruta de carpetas:', err.message);
+    res.status(500).json([]);
+  }
+});
+
+// Crea una carpeta nueva
+app.post('/archivos/carpeta', async (req, res) => {
+  try {
+    const nombre   = (req.body.nombre || '').trim();
+    const parentId = req.body.parentId || null;
+    if (!nombre) return res.status(400).json({ error: 'El nombre de la carpeta es obligatorio' });
+
+    const nueva = { nombre, parentId, creadoEn: Date.now() };
+    const resultado = await db.collection('carpetas').add(nueva);
+    res.json({ ok: true, carpeta: { _id: resultado.id, ...nueva } });
+  } catch (err) {
+    console.error('❌ Error al crear carpeta:', err.message);
+    res.status(500).json({ error: 'No se pudo crear la carpeta' });
+  }
+});
+
+// Sube un archivo (multipart/form-data: campo "archivo" + campo "carpetaId")
+app.post('/archivos/subir', upload.single('archivo'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
+
+    const carpetaId  = req.body.carpetaId && req.body.carpetaId !== 'null' ? req.body.carpetaId : null;
+    const nombreOrig = req.file.originalname;
+    const timestamp  = Date.now();
+    const rutaStorage = `archivos/${carpetaId || 'raiz'}/${timestamp}-${nombreOrig}`;
+
+    const archivoStorage = bucket.file(rutaStorage);
+    await archivoStorage.save(req.file.buffer, {
+      metadata: { contentType: req.file.mimetype || 'application/octet-stream' }
+    });
+
+    // Hace el objeto públicamente legible para poder verlo con un link directo.
+    // Si tu bucket tiene "Acceso uniforme a nivel de bucket" activado, esta llamada
+    // puede fallar (Firebase Storage lo activa por defecto en proyectos nuevos).
+    // En ese caso, ve a Google Cloud Console → Storage → tu bucket → Permisos
+    // y agrega el rol "Storage Object Viewer" al miembro "allUsers".
+    try {
+      await archivoStorage.makePublic();
+    } catch (e) {
+      console.warn('⚠️ No se pudo hacer público el archivo automáticamente:', e.message);
+    }
+
+    const nuevoRegistro = {
+      nombre:       nombreOrig,
+      carpetaId,
+      storagePath:  rutaStorage,
+      url:          urlPublica(rutaStorage),
+      tipo:         req.file.mimetype || 'application/octet-stream',
+      tamano:       req.file.size,
+      creadoEn:     timestamp
+    };
+
+    const resultado = await db.collection('archivos').add(nuevoRegistro);
+    res.json({ ok: true, archivo: { _id: resultado.id, ...nuevoRegistro } });
+  } catch (err) {
+    console.error('❌ Error al subir archivo:', err.message);
+    res.status(500).json({ error: 'No se pudo subir el archivo', detalle: err.message });
+  }
+});
+
+// Elimina un archivo (Storage + Firestore)
+app.delete('/archivos/:id', async (req, res) => {
+  try {
+    const docRef = db.collection('archivos').doc(req.params.id);
+    const doc    = await docRef.get();
+    if (!doc.exists) return res.status(404).json({ error: 'Archivo no encontrado' });
+
+    const data = doc.data();
+    if (data.storagePath) {
+      await bucket.file(data.storagePath).delete().catch(e =>
+        console.warn('⚠️ No se pudo borrar el objeto en Storage:', e.message)
+      );
+    }
+    await docRef.delete();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('❌ Error al eliminar archivo:', err.message);
+    res.status(500).json({ error: 'No se pudo eliminar el archivo' });
+  }
+});
+
+// Elimina una carpeta y TODO su contenido (subcarpetas + archivos) recursivamente
+async function borrarCarpetaRecursiva(carpetaId) {
+  const [subcarpetasSnap, archivosSnap] = await Promise.all([
+    db.collection('carpetas').where('parentId', '==', carpetaId).get(),
+    db.collection('archivos').where('carpetaId', '==', carpetaId).get()
+  ]);
+
+  for (const doc of archivosSnap.docs) {
+    const data = doc.data();
+    if (data.storagePath) {
+      await bucket.file(data.storagePath).delete().catch(() => {});
+    }
+    await doc.ref.delete();
+  }
+
+  for (const doc of subcarpetasSnap.docs) {
+    await borrarCarpetaRecursiva(doc.id);
+    await doc.ref.delete();
+  }
+}
+
+app.delete('/archivos/carpeta/:id', async (req, res) => {
+  try {
+    await borrarCarpetaRecursiva(req.params.id);
+    await db.collection('carpetas').doc(req.params.id).delete();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('❌ Error al eliminar carpeta:', err.message);
+    res.status(500).json({ error: 'No se pudo eliminar la carpeta' });
+  }
+});
+
 // =========================================================================
 // 6. INICIALIZACIÓN
 // =========================================================================
