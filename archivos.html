@@ -161,6 +161,7 @@ body { font-family: 'IBM Plex Sans', sans-serif; display: flex; background: #f0f
         </div>
         <div class="toolbar-acciones">
           <button class="btn btn-outline" onclick="pedirNuevaCarpeta()">📁 Nueva carpeta</button>
+          <button class="btn btn-outline" onclick="pedirNuevoEnlace()">🔗 Agregar enlace</button>
           <button class="btn btn-outline" onclick="document.getElementById('inputArchivos').click()">📄 Subir archivos</button>
           <button class="btn btn-primary" onclick="document.getElementById('inputCarpeta').click()">⬆️ Subir carpeta</button>
         </div>
@@ -187,6 +188,7 @@ body { font-family: 'IBM Plex Sans', sans-serif; display: flex; background: #f0f
     <div class="modal-title" id="modal-title">Confirmar acción</div>
     <div class="modal-desc" id="modal-desc">¿Estás seguro?</div>
     <input type="text" id="modal-input" style="display:none;" placeholder="Nombre de la carpeta" maxlength="80">
+    <input type="text" id="modal-input2" style="display:none;" placeholder="https://drive.google.com/..." maxlength="1000">
     <div class="modal-btns">
       <button class="btn-cancel" onclick="cerrarModal()">Cancelar</button>
       <button class="btn-confirm" id="modal-btn-confirm" onclick="ejecutarModal()">Eliminar</button>
@@ -222,13 +224,18 @@ function cerrarMenu() {
 }
 
 // ── MODAL genérico (confirmar / input de texto) ─────────────────
-function abrirModal({ icon, titulo, desc, labelBtn, conInput, valorInicial, fn, tipoConfirm }) {
+function abrirModal({ icon, titulo, desc, labelBtn, conInput, placeholderInput, conInput2, placeholderInput2, valorInicial, valorInicial2, fn, tipoConfirm }) {
   document.getElementById('modal-icon').textContent  = icon || '🗑️';
   document.getElementById('modal-title').textContent = titulo || 'Confirmar';
   document.getElementById('modal-desc').textContent  = desc || '';
   const input = document.getElementById('modal-input');
   input.style.display = conInput ? 'block' : 'none';
   input.value = valorInicial || '';
+  if (placeholderInput) input.placeholder = placeholderInput;
+  const input2 = document.getElementById('modal-input2');
+  input2.style.display = conInput2 ? 'block' : 'none';
+  input2.value = valorInicial2 || '';
+  if (placeholderInput2) input2.placeholder = placeholderInput2;
   const btn = document.getElementById('modal-btn-confirm');
   btn.textContent = labelBtn || 'Eliminar';
   btn.className = 'btn-confirm' + (tipoConfirm === 'ok' ? ' ok' : '');
@@ -236,6 +243,7 @@ function abrirModal({ icon, titulo, desc, labelBtn, conInput, valorInicial, fn, 
   _accionModal = fn;
   document.getElementById('modal-overlay').classList.add('visible');
   if (conInput) setTimeout(() => input.focus(), 100);
+  else if (conInput2) setTimeout(() => input2.focus(), 100);
 }
 function cerrarModal() {
   document.getElementById('modal-overlay').classList.remove('visible');
@@ -246,12 +254,16 @@ async function ejecutarModal() {
   const btn = document.getElementById('modal-btn-confirm');
   btn.disabled = true;
   const valorInput = document.getElementById('modal-input').value;
-  try { await _accionModal(valorInput); } finally { cerrarModal(); }
+  const valorInput2 = document.getElementById('modal-input2').value;
+  try { await _accionModal(valorInput, valorInput2); } finally { cerrarModal(); }
 }
 document.getElementById('modal-overlay').addEventListener('click', e => {
   if (e.target === document.getElementById('modal-overlay')) cerrarModal();
 });
 document.getElementById('modal-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') ejecutarModal();
+});
+document.getElementById('modal-input2').addEventListener('keydown', e => {
   if (e.key === 'Enter') ejecutarModal();
 });
 
@@ -289,6 +301,7 @@ function iconoPara(item, esCarpeta) {
   if (esCarpeta) return '📁';
   const tipo = (item.tipo || '').toLowerCase();
   const nombre = (item.nombre || '').toLowerCase();
+  if (tipo === 'enlace' || tipo === 'link') return '🔗';
   if (tipo.includes('pdf')) return '📕';
   if (tipo.startsWith('image/')) return '🖼️';
   if (tipo.includes('spreadsheet') || nombre.endsWith('.xlsx') || nombre.endsWith('.xls') || nombre.endsWith('.csv')) return '📊';
@@ -331,7 +344,7 @@ function renderContenido(carpetas, archivos) {
         <button class="item-borrar" title="Eliminar archivo" onclick="event.stopPropagation(); pedirBorrarArchivo('${a._id}', '${escHtml(a.nombre)}')">🗑️</button>
         <div class="item-icono">${iconoPara(a, false)}</div>
         <div class="item-nombre">${escHtml(a.nombre)}</div>
-        <div class="item-meta">${formatoTamano(a.tamano)}</div>
+        <div class="item-meta">${(a.tipo === 'enlace' || a.tipo === 'link') ? 'Enlace' : formatoTamano(a.tamano)}</div>
       </div>`;
   });
 
@@ -363,6 +376,38 @@ function pedirNuevaCarpeta() {
         const data = await r.json();
         if (!r.ok) throw new Error(data.error || 'Error al crear carpeta');
         mostrarToast('📁 Carpeta creada');
+        cargarCarpeta(carpetaActualId);
+      } catch (e) { mostrarToast('⚠️ ' + e.message); }
+    }
+  });
+}
+
+// ── NUEVO ENLACE (Google Drive u otro link) ────────────────────────
+function pedirNuevoEnlace() {
+  abrirModal({
+    icon: '🔗',
+    titulo: 'Agregar enlace',
+    desc: 'Pega el link (Google Drive u otro) y ponle un nombre. Aparecerá como una tarjeta que abre el link al aplastarla.',
+    labelBtn: 'Agregar',
+    tipoConfirm: 'ok',
+    conInput: true,
+    placeholderInput: 'Nombre del archivo (ej: Factura 001)',
+    conInput2: true,
+    placeholderInput2: 'https://drive.google.com/...',
+    fn: async (nombre, url) => {
+      nombre = (nombre || '').trim();
+      url = (url || '').trim();
+      if (!nombre) return mostrarToast('⚠️ Ponle un nombre al enlace');
+      if (!url) return mostrarToast('⚠️ Pega el link');
+      if (!/^https?:\/\//i.test(url)) return mostrarToast('⚠️ El link debe empezar con http:// o https://');
+      try {
+        const r = await fetch(API + '/archivos/enlace', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre, url, carpetaId: carpetaActualId })
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Error al agregar enlace');
+        mostrarToast('🔗 Enlace agregado');
         cargarCarpeta(carpetaActualId);
       } catch (e) { mostrarToast('⚠️ ' + e.message); }
     }
