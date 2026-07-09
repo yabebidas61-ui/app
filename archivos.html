@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e272e">
+<title>ContaNexus — Archivos</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
+body { font-family: 'IBM Plex Sans', sans-serif; display: flex; background: #f0f2f5; min-height: 100vh; overflow-x: hidden; }
+
+/* ===== SIDEBAR ===== */
+.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 900; opacity: 0; transition: opacity 0.25s; }
+.sidebar-overlay.activo { display: block; opacity: 1; }
+.sidebar { width: 240px; max-width: 78vw; background: #1e272e; color: white; height: 100vh; min-height: 100vh; padding: 20px; position: fixed; top: 0; left: 0; flex-shrink: 0; z-index: 950; transform: translateX(-100%); transition: transform 0.28s cubic-bezier(0.4,0,0.2,1); overflow-y: auto; }
+.sidebar.activo { transform: translateX(0); }
+.sidebar-close { display: block; margin-left: auto; background: none; border: none; color: #8395a7; font-size: 22px; line-height: 1; padding: 4px 8px; cursor: pointer; }
+.sidebar-brand { font-family: 'IBM Plex Mono', monospace; letter-spacing: 2px; color: #ff3f34; margin-bottom: 8px; font-size: 15px; font-weight: 700; }
+.sidebar-sub { font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 16px; }
+.nav-link { display: flex; align-items: center; gap: 10px; color: #c8d6e5; padding: 13px 12px; text-decoration: none; margin-top: 4px; border-radius: 6px; font-size: 15px; transition: background 0.2s; }
+.nav-link:hover, .nav-link:active { background: #485460; color: white; }
+.nav-link.active { background: #ff3f34; color: white; font-weight: 600; }
+
+/* ===== MAIN ===== */
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; width: 100%; }
+.header { background: linear-gradient(135deg, #1e272e 0%, #2f3640 100%); color: white; padding: 14px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 3px solid #ff3f34; position: sticky; top: 0; z-index: 500; flex-wrap: wrap; }
+.hamburger { background: none; border: none; color: white; font-size: 22px; padding: 6px 8px; cursor: pointer; line-height: 1; flex-shrink: 0; }
+.header-icon { font-size: 22px; flex-shrink: 0; }
+.header-title { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; }
+.header-sub { font-size: 11px; color: #8395a7; margin-top: 2px; }
+.fecha-sistema { font-size: 11px; color: #8395a7; font-family: 'IBM Plex Mono', monospace; margin-left: auto; width: 100%; text-align: right; order: 3; }
+
+.contenido { padding: 14px; flex: 1; }
+
+.btn { padding: 12px 18px; border: none; border-radius: 8px; cursor: pointer; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; font-weight: 600; transition: all 0.2s; min-height: 44px; white-space: nowrap; }
+.btn-primary { background: #ff3f34; color: white; }
+.btn-primary:hover { background: #c0392b; }
+.btn-dark { background: #2d3436; color: white; }
+.btn-dark:hover { background: #1e272e; }
+.btn-outline { background: white; color: #2d3436; border: 1.5px solid #dfe6e9; }
+.btn-outline:hover { background: #f8f9fa; }
+
+.card { background: white; border-radius: 14px; padding: 16px 14px; box-shadow: 0 2px 14px rgba(0,0,0,0.07); margin-bottom: 16px; }
+
+.toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.toolbar-acciones { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+
+.breadcrumb { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: 'IBM Plex Mono', monospace; font-size: 13px; width: 100%; padding: 4px 2px 10px; }
+.crumb { color: #636e72; cursor: pointer; padding: 4px 8px; border-radius: 6px; transition: background 0.15s; white-space: nowrap; }
+.crumb:hover { background: #f1f2f6; }
+.crumb.actual { color: #1e272e; font-weight: 700; cursor: default; }
+.crumb.actual:hover { background: transparent; }
+.crumb-sep { color: #dfe6e9; }
+
+.drop-zone { border: 2px dashed #dfe6e9; border-radius: 14px; transition: all 0.2s; }
+.drop-zone.dragover { border-color: #ff3f34; background: #fff5f4; }
+
+.grid-archivos { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; padding: 4px; }
+.item-card { background: white; border: 1.5px solid #f1f2f6; border-radius: 12px; padding: 14px 10px; text-align: center; cursor: pointer; transition: all 0.15s; position: relative; user-select: none; }
+.item-card:hover { border-color: #ff3f34; box-shadow: 0 4px 14px rgba(0,0,0,0.08); transform: translateY(-2px); }
+.item-icono { font-size: 34px; margin-bottom: 8px; line-height: 1; }
+.item-nombre { font-size: 12px; font-weight: 600; color: #1e272e; word-break: break-word; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.item-meta { font-size: 10px; color: #b2bec3; margin-top: 4px; font-family: 'IBM Plex Mono', monospace; }
+.item-borrar { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 6px; border: none; background: rgba(231,76,60,0.08); color: #e74c3c; font-size: 12px; display: none; align-items: center; justify-content: center; cursor: pointer; }
+.item-card:hover .item-borrar { display: flex; }
+.item-borrar:hover { background: #e74c3c; color: white; }
+
+.subiendo-lista { margin-top: 12px; }
+.subiendo-fila { display: flex; align-items: center; gap: 10px; padding: 8px 4px; font-size: 12.5px; color: #636e72; }
+.subiendo-barra-wrap { flex: 1; height: 6px; background: #f1f2f6; border-radius: 4px; overflow: hidden; }
+.subiendo-barra { height: 100%; background: linear-gradient(90deg,#ff3f34,#ff6f61); width: 0%; transition: width 0.2s; }
+.subiendo-ok { color: #00b894; font-weight: 700; }
+.subiendo-error { color: #e74c3c; font-weight: 700; }
+
+.empty-state { text-align: center; padding: 50px 20px; color: #b2bec3; }
+.empty-icon { font-size: 42px; margin-bottom: 10px; }
+.spinner-wrap { text-align: center; padding: 50px 20px; color: #8395a7; font-size: 14px; }
+.spinner { display: inline-block; width: 28px; height: 28px; border: 3px solid #dfe6e9; border-top-color: #ff3f34; border-radius: 50%; animation: spin 0.7s linear infinite; margin-bottom: 10px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* MODAL */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; }
+.modal-overlay.visible { display: flex; }
+.modal-box { background: white; border-radius: 16px; padding: 24px 22px; width: min(420px, 90vw); box-shadow: 0 20px 60px rgba(0,0,0,0.25); animation: slideUp 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+@keyframes slideUp { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.modal-icon  { font-size: 36px; margin-bottom: 12px; }
+.modal-title { font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 700; color: #1e272e; margin-bottom: 8px; }
+.modal-desc  { font-size: 13px; color: #636e72; line-height: 1.6; margin-bottom: 18px; }
+.modal-box input[type="text"] { width: 100%; padding: 12px 14px; border: 1.5px solid #dfe6e9; border-radius: 8px; font-family: 'IBM Plex Sans', sans-serif; font-size: 15px; outline: none; margin-bottom: 18px; }
+.modal-box input[type="text"]:focus { border-color: #ff3f34; }
+.modal-btns  { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.modal-btns button { flex: 1 1 auto; }
+.btn-cancel  { padding: 11px 20px; border: 1.5px solid #dfe6e9; border-radius: 8px; background: white; color: #636e72; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; min-height: 44px; }
+.btn-cancel:hover { background: #f8f9fa; }
+.btn-confirm { padding: 11px 20px; border: none; border-radius: 8px; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; background: #e74c3c; color: white; min-height: 44px; }
+.btn-confirm:hover { background: #c0392b; }
+.btn-confirm.ok { background: #ff3f34; }
+.btn-confirm.ok:hover { background: #c0392b; }
+.btn-confirm:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.toast { position: fixed; bottom: 28px; right: 28px; background: #2d3436; color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); transform: translateY(80px); opacity: 0; transition: all 0.35s cubic-bezier(0.34,1.56,0.64,1); z-index: 3000; }
+.toast.visible { transform: translateY(0); opacity: 1; }
+
+@media (max-width: 768px) {
+  .toast { left: 16px; right: 16px; bottom: 20px; text-align: center; }
+  .toolbar-acciones { width: 100%; }
+  .toolbar-acciones .btn { flex: 1; }
+}
+
+@media (min-width: 769px) {
+  .hamburger, .sidebar-close, .sidebar-overlay { display: none !important; }
+  .sidebar { position: sticky; top: 0; transform: none; width: 220px; max-width: none; height: auto; }
+  .contenido { padding: 24px 28px; }
+  .header { padding: 18px 28px; }
+  .header-icon { font-size: 26px; }
+  .header-title { font-size: 18px; }
+  .header-sub { font-size: 12px; }
+  .fecha-sistema { font-size: 12px; width: auto; order: 0; }
+  .card { padding: 20px 24px; margin-bottom: 20px; }
+  .grid-archivos { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+  .item-card { padding: 18px 12px; }
+  .item-icono { font-size: 40px; }
+  .modal-box { padding: 28px 30px; }
+}
+</style>
+</head>
+<body>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="cerrarMenu()"></div>
+<div class="sidebar" id="sidebar">
+  <button class="sidebar-close" onclick="cerrarMenu()" aria-label="Cerrar menú">✕</button>
+  <div class="sidebar-brand">ContaNexus</div>
+  <div class="sidebar-sub">Control de Inventario</div>
+  <a href="index.html" class="nav-link">📅 Historial de Caja</a>
+  <a href="entrada_salida.html" class="nav-link">🔄 Movimientos Inventario</a>
+  <a href="bodega.html" class="nav-link">📦 Bodega</a>
+  <a href="vencimientos.html" class="nav-link">⏳ Vencimientos</a>
+  <a href="cuentas_cobrar.html" class="nav-link">💸 Cuentas por Cobrar</a>
+  <a href="calendario.html" class="nav-link">🧾 Cheques por Pagar</a>
+  <a href="archivos.html" class="nav-link active">🗂️ Archivos</a>
+</div>
+
+<div class="main">
+  <div class="header">
+    <button class="hamburger" onclick="abrirMenu()" aria-label="Abrir menú">☰</button>
+    <div class="header-icon">🗂️</div>
+    <div>
+      <div class="header-title">ARCHIVOS</div>
+      <div class="header-sub">Documentos y carpetas del negocio</div>
+    </div>
+    <div class="fecha-sistema" id="txt-fecha"></div>
+  </div>
+
+  <div class="contenido">
+    <div class="card drop-zone" id="dropZone">
+      <div class="toolbar">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:#1e272e;display:flex;align-items:center;gap:8px;">
+          🗂️ Mis Archivos
+        </div>
+        <div class="toolbar-acciones">
+          <button class="btn btn-outline" onclick="pedirNuevaCarpeta()">📁 Nueva carpeta</button>
+          <button class="btn btn-outline" onclick="document.getElementById('inputArchivos').click()">📄 Subir archivos</button>
+          <button class="btn btn-primary" onclick="document.getElementById('inputCarpeta').click()">⬆️ Subir carpeta</button>
+        </div>
+      </div>
+
+      <input type="file" id="inputArchivos" multiple style="display:none" onchange="onSeleccionArchivos(this.files)">
+      <input type="file" id="inputCarpeta" webkitdirectory directory multiple style="display:none" onchange="onSeleccionCarpeta(this.files)">
+
+      <div class="breadcrumb" id="breadcrumb"></div>
+
+      <div id="subiendoWrap" class="subiendo-lista" style="display:none;"></div>
+
+      <div id="contenidoCarpeta">
+        <div class="spinner-wrap"><div class="spinner"></div><br>Cargando archivos...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONFIRMAR / NUEVA CARPETA -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-icon" id="modal-icon">🗑️</div>
+    <div class="modal-title" id="modal-title">Confirmar acción</div>
+    <div class="modal-desc" id="modal-desc">¿Estás seguro?</div>
+    <input type="text" id="modal-input" style="display:none;" placeholder="Nombre de la carpeta" maxlength="80">
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-confirm" id="modal-btn-confirm" onclick="ejecutarModal()">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+  ? 'http://localhost:3000'
+  : 'https://agronaranjito-1.onrender.com';
+
+document.getElementById('txt-fecha').textContent =
+  new Date().toLocaleDateString('es-EC', { day:'2-digit', month:'2-digit', year:'numeric' });
+
+// ── ESTADO ────────────────────────────────────────────────────────
+let carpetaActualId = null; // null = raíz
+let rutaActual = [];        // breadcrumb: [{_id, nombre}, ...]
+let _accionModal = null;
+
+// ── MENÚ MÓVIL ────────────────────────────────────────────────────
+function abrirMenu() {
+  document.getElementById('sidebar').classList.add('activo');
+  document.getElementById('sidebarOverlay').classList.add('activo');
+  document.body.style.overflow = 'hidden';
+}
+function cerrarMenu() {
+  document.getElementById('sidebar').classList.remove('activo');
+  document.getElementById('sidebarOverlay').classList.remove('activo');
+  document.body.style.overflow = '';
+}
+
+// ── MODAL genérico (confirmar / input de texto) ─────────────────
+function abrirModal({ icon, titulo, desc, labelBtn, conInput, valorInicial, fn, tipoConfirm }) {
+  document.getElementById('modal-icon').textContent  = icon || '🗑️';
+  document.getElementById('modal-title').textContent = titulo || 'Confirmar';
+  document.getElementById('modal-desc').textContent  = desc || '';
+  const input = document.getElementById('modal-input');
+  input.style.display = conInput ? 'block' : 'none';
+  input.value = valorInicial || '';
+  const btn = document.getElementById('modal-btn-confirm');
+  btn.textContent = labelBtn || 'Eliminar';
+  btn.className = 'btn-confirm' + (tipoConfirm === 'ok' ? ' ok' : '');
+  btn.disabled = false;
+  _accionModal = fn;
+  document.getElementById('modal-overlay').classList.add('visible');
+  if (conInput) setTimeout(() => input.focus(), 100);
+}
+function cerrarModal() {
+  document.getElementById('modal-overlay').classList.remove('visible');
+  _accionModal = null;
+}
+async function ejecutarModal() {
+  if (!_accionModal) return;
+  const btn = document.getElementById('modal-btn-confirm');
+  btn.disabled = true;
+  const valorInput = document.getElementById('modal-input').value;
+  try { await _accionModal(valorInput); } finally { cerrarModal(); }
+}
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay')) cerrarModal();
+});
+document.getElementById('modal-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') ejecutarModal();
+});
+
+// ── CARGA DE CARPETA ─────────────────────────────────────────────
+async function cargarCarpeta(id) {
+  carpetaActualId = id;
+  document.getElementById('contenidoCarpeta').innerHTML =
+    '<div class="spinner-wrap"><div class="spinner"></div><br>Cargando archivos...</div>';
+  try {
+    const qs = id ? ('?carpeta=' + encodeURIComponent(id)) : '';
+    const [datos, ruta] = await Promise.all([
+      fetch(API + '/archivos' + qs).then(r => r.json()),
+      id ? fetch(API + '/archivos/ruta/' + id).then(r => r.json()) : Promise.resolve([])
+    ]);
+    rutaActual = ruta || [];
+    renderBreadcrumb();
+    renderContenido(datos.carpetas || [], datos.archivos || []);
+  } catch (e) {
+    document.getElementById('contenidoCarpeta').innerHTML =
+      '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Error al conectar: ' + e.message + '</p></div>';
+  }
+}
+
+function renderBreadcrumb() {
+  const cont = document.getElementById('breadcrumb');
+  let html = `<span class="crumb ${!carpetaActualId ? 'actual' : ''}" onclick="cargarCarpeta(null)">🏠 Inicio</span>`;
+  rutaActual.forEach((c, i) => {
+    const esUltimo = i === rutaActual.length - 1;
+    html += `<span class="crumb-sep">/</span><span class="crumb ${esUltimo ? 'actual' : ''}" onclick="cargarCarpeta('${c._id}')">${c.nombre}</span>`;
+  });
+  cont.innerHTML = html;
+}
+
+function iconoPara(item, esCarpeta) {
+  if (esCarpeta) return '📁';
+  const tipo = (item.tipo || '').toLowerCase();
+  const nombre = (item.nombre || '').toLowerCase();
+  if (tipo.includes('pdf')) return '📕';
+  if (tipo.startsWith('image/')) return '🖼️';
+  if (tipo.includes('spreadsheet') || nombre.endsWith('.xlsx') || nombre.endsWith('.xls') || nombre.endsWith('.csv')) return '📊';
+  if (tipo.includes('word') || nombre.endsWith('.doc') || nombre.endsWith('.docx')) return '📘';
+  if (tipo.includes('presentation') || nombre.endsWith('.ppt') || nombre.endsWith('.pptx')) return '📙';
+  if (tipo.includes('zip') || tipo.includes('rar') || nombre.endsWith('.zip') || nombre.endsWith('.rar')) return '🗜️';
+  if (tipo.startsWith('video/')) return '🎬';
+  if (tipo.startsWith('audio/')) return '🎵';
+  return '📄';
+}
+
+function formatoTamano(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/(1024*1024)).toFixed(1) + ' MB';
+}
+
+function renderContenido(carpetas, archivos) {
+  const cont = document.getElementById('contenidoCarpeta');
+  if (carpetas.length === 0 && archivos.length === 0) {
+    cont.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>Esta carpeta está vacía</p></div>';
+    return;
+  }
+
+  let html = '<div class="grid-archivos">';
+
+  carpetas.forEach(c => {
+    html += `
+      <div class="item-card" onclick="cargarCarpeta('${c._id}')">
+        <button class="item-borrar" title="Eliminar carpeta" onclick="event.stopPropagation(); pedirBorrarCarpeta('${c._id}', '${escHtml(c.nombre)}')">🗑️</button>
+        <div class="item-icono">📁</div>
+        <div class="item-nombre">${escHtml(c.nombre)}</div>
+      </div>`;
+  });
+
+  archivos.forEach(a => {
+    html += `
+      <div class="item-card" onclick="window.open('${a.url}', '_blank')">
+        <button class="item-borrar" title="Eliminar archivo" onclick="event.stopPropagation(); pedirBorrarArchivo('${a._id}', '${escHtml(a.nombre)}')">🗑️</button>
+        <div class="item-icono">${iconoPara(a, false)}</div>
+        <div class="item-nombre">${escHtml(a.nombre)}</div>
+        <div class="item-meta">${formatoTamano(a.tamano)}</div>
+      </div>`;
+  });
+
+  html += '</div>';
+  cont.innerHTML = html;
+}
+
+function escHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+// ── NUEVA CARPETA ─────────────────────────────────────────────────
+function pedirNuevaCarpeta() {
+  abrirModal({
+    icon: '📁',
+    titulo: 'Nueva carpeta',
+    desc: 'Escribe el nombre de la carpeta que quieres crear aquí.',
+    labelBtn: 'Crear',
+    tipoConfirm: 'ok',
+    conInput: true,
+    fn: async (nombre) => {
+      nombre = (nombre || '').trim();
+      if (!nombre) return mostrarToast('⚠️ El nombre no puede estar vacío');
+      try {
+        const r = await fetch(API + '/archivos/carpeta', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre, parentId: carpetaActualId })
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Error al crear carpeta');
+        mostrarToast('📁 Carpeta creada');
+        cargarCarpeta(carpetaActualId);
+      } catch (e) { mostrarToast('⚠️ ' + e.message); }
+    }
+  });
+}
+
+// ── BORRAR ────────────────────────────────────────────────────────
+function pedirBorrarArchivo(id, nombre) {
+  abrirModal({
+    icon: '🗑️', titulo: 'Eliminar archivo',
+    desc: `Se eliminará "${nombre}" permanentemente. Esta acción no se puede deshacer.`,
+    labelBtn: 'Sí, eliminar',
+    fn: async () => {
+      try {
+        const r = await fetch(API + '/archivos/' + id, { method: 'DELETE' });
+        if (!r.ok) throw new Error('Error al eliminar');
+        mostrarToast('🗑️ Archivo eliminado');
+        cargarCarpeta(carpetaActualId);
+      } catch (e) { mostrarToast('⚠️ ' + e.message); }
+    }
+  });
+}
+
+function pedirBorrarCarpeta(id, nombre) {
+  abrirModal({
+    icon: '🗑️', titulo: 'Eliminar carpeta',
+    desc: `Se eliminará "${nombre}" y TODO su contenido (subcarpetas y archivos). Esta acción no se puede deshacer.`,
+    labelBtn: 'Sí, eliminar todo',
+    fn: async () => {
+      try {
+        const r = await fetch(API + '/archivos/carpeta/' + id, { method: 'DELETE' });
+        if (!r.ok) throw new Error('Error al eliminar');
+        mostrarToast('🗑️ Carpeta eliminada');
+        cargarCarpeta(carpetaActualId);
+      } catch (e) { mostrarToast('⚠️ ' + e.message); }
+    }
+  });
+}
+
+// ── SUBIDA DE ARCHIVOS ────────────────────────────────────────────
+function onSeleccionArchivos(files) {
+  subirLista(Array.from(files).map(f => ({ file: f, carpetaId: carpetaActualId })));
+  document.getElementById('inputArchivos').value = '';
+}
+
+// Cache de carpetas creadas en esta sesión de subida para no duplicar (ruta relativa -> id)
+async function onSeleccionCarpeta(files) {
+  const lista = Array.from(files);
+  if (lista.length === 0) return;
+
+  mostrarToast('📁 Preparando estructura de carpetas...');
+  const cacheCarpetas = {}; // "sub/sub2" -> id
+  const tareas = [];
+
+  for (const f of lista) {
+    const relPath = f.webkitRelativePath || f.name; // "MiCarpeta/sub/archivo.pdf"
+    const partes = relPath.split('/');
+    partes.pop(); // quita el nombre del archivo, deja solo carpetas
+    let parentId = carpetaActualId;
+    let rutaAcum = '';
+
+    for (const parteNombre of partes) {
+      rutaAcum += '/' + parteNombre;
+      if (cacheCarpetas[rutaAcum] !== undefined) {
+        parentId = cacheCarpetas[rutaAcum];
+        continue;
+      }
+      const r = await fetch(API + '/archivos/carpeta', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: parteNombre, parentId })
+      });
+      const data = await r.json();
+      const nuevoId = data.carpeta ? data.carpeta._id : null;
+      cacheCarpetas[rutaAcum] = nuevoId;
+      parentId = nuevoId;
+    }
+
+    tareas.push({ file: f, carpetaId: parentId });
+  }
+
+  document.getElementById('inputCarpeta').value = '';
+  subirLista(tareas);
+}
+
+function subirLista(tareas) {
+  const wrap = document.getElementById('subiendoWrap');
+  wrap.style.display = 'block';
+  wrap.innerHTML = '';
+
+  let pendientes = tareas.length;
+
+  tareas.forEach((t, idx) => {
+    const filaId = 'subida-' + Date.now() + '-' + idx;
+    const fila = document.createElement('div');
+    fila.className = 'subiendo-fila';
+    fila.id = filaId;
+    fila.innerHTML = `
+      <span style="min-width:0;flex:0 0 auto;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(t.file.name)}</span>
+      <div class="subiendo-barra-wrap"><div class="subiendo-barra" id="${filaId}-barra"></div></div>
+      <span id="${filaId}-estado">0%</span>`;
+    wrap.appendChild(fila);
+
+    subirArchivoXHR(t.file, t.carpetaId, filaId, () => {
+      pendientes--;
+      if (pendientes === 0) {
+        setTimeout(() => { wrap.style.display = 'none'; wrap.innerHTML = ''; }, 1500);
+        cargarCarpeta(carpetaActualId);
+      }
+    });
+  });
+}
+
+function subirArchivoXHR(file, carpetaId, filaId, onDone) {
+  const form = new FormData();
+  form.append('archivo', file);
+  form.append('carpetaId', carpetaId || '');
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', API + '/archivos/subir');
+
+  xhr.upload.onprogress = (e) => {
+    if (!e.lengthComputable) return;
+    const pct = Math.round((e.loaded / e.total) * 100);
+    const barra  = document.getElementById(filaId + '-barra');
+    const estado = document.getElementById(filaId + '-estado');
+    if (barra)  barra.style.width = pct + '%';
+    if (estado) estado.textContent = pct + '%';
+  };
+
+  xhr.onload = () => {
+    const estado = document.getElementById(filaId + '-estado');
+    if (xhr.status >= 200 && xhr.status < 300) {
+      if (estado) { estado.textContent = '✅'; estado.className = 'subiendo-ok'; }
+    } else {
+      if (estado) { estado.textContent = '❌'; estado.className = 'subiendo-error'; }
+    }
+    onDone();
+  };
+  xhr.onerror = () => {
+    const estado = document.getElementById(filaId + '-estado');
+    if (estado) { estado.textContent = '❌'; estado.className = 'subiendo-error'; }
+    onDone();
+  };
+
+  xhr.send(form);
+}
+
+// ── DRAG & DROP ───────────────────────────────────────────────────
+const dropZone = document.getElementById('dropZone');
+['dragenter','dragover'].forEach(ev => dropZone.addEventListener(ev, e => {
+  e.preventDefault(); e.stopPropagation(); dropZone.classList.add('dragover');
+}));
+['dragleave','drop'].forEach(ev => dropZone.addEventListener(ev, e => {
+  e.preventDefault(); e.stopPropagation(); dropZone.classList.remove('dragover');
+}));
+dropZone.addEventListener('drop', e => {
+  const files = e.dataTransfer.files;
+  if (files && files.length) {
+    subirLista(Array.from(files).map(f => ({ file: f, carpetaId: carpetaActualId })));
+  }
+});
+
+// ── TOAST ─────────────────────────────────────────────────────────
+function mostrarToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('visible');
+  setTimeout(() => t.classList.remove('visible'), 3200);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+cargarCarpeta(null);
+</script>
+</body>
+</html>
