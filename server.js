@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
 const admin   = require('firebase-admin');
+const multer  = require('multer');
 
 const app = express();
 
@@ -20,14 +21,18 @@ if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
 
 try {
   const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+  admin.initializeApp({
+    credential:    admin.credential.cert(serviceAccount),
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${serviceAccount.project_id}.appspot.com`
+  });
   console.log("✅ ¡Conectado exitosamente a Firebase Cloud Firestore!");
 } catch (error) {
   console.error("❌ Error crítico al procesar FIREBASE_SERVICE_ACCOUNT:", error.message);
   process.exit(1);
 }
 
-const db = admin.firestore();
+const db     = admin.firestore();
+const bucket = admin.storage().bucket();
 
 // =========================================================================
 // 2. CONFIGURACIÓN DE BREVO (API HTTP)
@@ -1681,57 +1686,18 @@ function hoyISOServidor() {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
-/* ==========================================================================
-   INSTRUCCIONES DE INSTALACIÓN
-   ==========================================================================
-   1) En tu terminal, dentro de la carpeta del backend, instala multer:
-
-        npm install multer
-
-   2) Abre tu server.js y haz estos 3 cambios:
-
-   ----------------------------------------------------------------------
-   CAMBIO A) Al inicio del archivo, junto a los demás require:
-   ----------------------------------------------------------------------
-      const multer = require('multer');
-
-   ----------------------------------------------------------------------
-   CAMBIO B) Donde inicializas Firebase Admin (bloque "1. CONFIGURACIÓN DE
-   FIREBASE ADMIN SDK"), reemplaza:
-
-      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-
-   por:
-
-      admin.initializeApp({
-        credential:     admin.credential.cert(serviceAccount),
-        storageBucket:  process.env.FIREBASE_STORAGE_BUCKET || `${serviceAccount.project_id}.appspot.com`
-      });
-
-   Y justo debajo de "const db = admin.firestore();" agrega:
-
-      const bucket = admin.storage().bucket();
-
-   NOTA: Si tu bucket de Storage tiene un nombre distinto al default
-   "<proyecto>.appspot.com", agrega la variable de entorno
-   FIREBASE_STORAGE_BUCKET en Render con el nombre exacto de tu bucket
-   (lo ves en Firebase Console → Storage, algo como "mi-proyecto.firebasestorage.app").
-
-   ----------------------------------------------------------------------
-   CAMBIO C) Pega TODO el bloque de abajo (desde "const upload = multer"
-   hasta el final del archivo) en cualquier parte de tu server.js, antes
-   de la sección "6. INICIALIZACIÓN" (antes de app.listen).
-   ----------------------------------------------------------------------
-*/
+// =========================================================================
+// ARCHIVOS — GESTOR TIPO GOOGLE DRIVE (Firebase Storage + Firestore)
+//
+// Requiere la variable de entorno FIREBASE_STORAGE_BUCKET en Render con el
+// nombre exacto del bucket (Firebase Console → Storage), si tu bucket no
+// sigue el patrón por defecto "<proyecto>.appspot.com".
+// =========================================================================
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits:  { fileSize: 100 * 1024 * 1024 } // 100MB por archivo
 });
-
-// =========================================================================
-// ARCHIVOS — GESTOR TIPO GOOGLE DRIVE (Firebase Storage + Firestore)
-// =========================================================================
 
 // Helper: arma la URL pública de un objeto en el bucket
 function urlPublica(path) {
