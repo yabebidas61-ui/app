@@ -1822,6 +1822,37 @@ app.post('/archivos/subir', upload.single('archivo'), async (req, res) => {
   }
 });
 
+// Agrega un "archivo" de tipo enlace (link externo, ej. Google Drive) sin pasar por Cloudinary
+app.post('/archivos/enlace', async (req, res) => {
+  try {
+    const nombre = (req.body.nombre || '').trim();
+    const url    = (req.body.url    || '').trim();
+    const carpetaId = req.body.carpetaId || null;
+
+    if (!nombre) return res.status(400).json({ error: 'El nombre del enlace es obligatorio' });
+    if (!url || !/^https?:\/\//i.test(url)) {
+      return res.status(400).json({ error: 'El enlace debe ser una URL válida (http:// o https://)' });
+    }
+
+    const nuevoRegistro = {
+      nombre,
+      carpetaId,
+      publicId:     null,
+      resourceType: 'enlace',
+      url,
+      tipo:         'enlace',
+      tamano:       0,
+      creadoEn:     Date.now()
+    };
+
+    const resultado = await db.collection('archivos').add(nuevoRegistro);
+    res.json({ ok: true, archivo: { _id: resultado.id, ...nuevoRegistro } });
+  } catch (err) {
+    console.error('❌ Error al agregar enlace:', err.message);
+    res.status(500).json({ error: 'No se pudo agregar el enlace' });
+  }
+});
+
 // Elimina un archivo (Storage + Firestore)
 app.delete('/archivos/:id', async (req, res) => {
   try {
