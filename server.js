@@ -904,16 +904,17 @@ app.post('/ventas', async (req, res) => {
 
     if (req.body.tipo === "credito") {
       await db.collection('deudas').add({
-        cliente:   req.body.cliente,
-        cedula:    req.body.cedula    || "SIN CÉDULA",
-        celular:   req.body.celular   || "",
-        correo:    req.body.correo    || "",
-        direccion: req.body.direccion || "",
-        total:     req.body.total,
-        pagado:    0,
-        productos: req.body.productos || [],
-        pagos:     [],
-        fecha:     new Date().toISOString()
+        cliente:     req.body.cliente,
+        cedula:      req.body.cedula    || "SIN CÉDULA",
+        celular:     req.body.celular   || "",
+        correo:      req.body.correo    || "",
+        direccion:   req.body.direccion || "",
+        total:       req.body.total,
+        pagado:      0,
+        diasCredito: Number(req.body.diasCredito || 30),
+        productos:   req.body.productos || [],
+        pagos:       [],
+        fecha:       new Date().toISOString()
       });
     }
 
@@ -1012,16 +1013,17 @@ app.get('/deudas', async (req, res) => {
 app.post('/deudas', async (req, res) => {
   try {
     const nueva = {
-      cliente:   req.body.cliente   || "",
-      cedula:    req.body.cedula    || "-",
-      celular:   req.body.celular   || "",
-      direccion: req.body.direccion || "",
-      correo:    req.body.correo    || "",
-      total:     Number(req.body.total || 0),
-      pagado:    0,
-      productos: req.body.productos || [],
-      pagos:     [],
-      fecha:     req.body.fecha ? new Date(req.body.fecha).toISOString() : new Date().toISOString()
+      cliente:     req.body.cliente   || "",
+      cedula:      req.body.cedula    || "-",
+      celular:     req.body.celular   || "",
+      direccion:   req.body.direccion || "",
+      correo:      req.body.correo    || "",
+      total:       Number(req.body.total || 0),
+      pagado:      0,
+      diasCredito: Number(req.body.diasCredito || 30),
+      productos:   req.body.productos || [],
+      pagos:       [],
+      fecha:       req.body.fecha ? new Date(req.body.fecha).toISOString() : new Date().toISOString()
     };
     const resultado = await db.collection('deudas').add(nueva);
     res.json({ _id: resultado.id, ...nueva });
@@ -1115,14 +1117,15 @@ app.put('/deudas/:id', async (req, res) => {
     if (!doc.exists) return res.status(404).json({ error: "Cuenta no encontrada" });
 
     const deuda = doc.data();
-    if (req.body.cliente   !== undefined) deuda.cliente   = req.body.cliente;
-    if (req.body.cedula    !== undefined) deuda.cedula    = req.body.cedula;
-    if (req.body.celular   !== undefined) deuda.celular   = req.body.celular;
-    if (req.body.direccion !== undefined) deuda.direccion = req.body.direccion;
-    if (req.body.total     !== undefined) deuda.total     = Number(req.body.total);
-    if (req.body.productos !== undefined) deuda.productos = req.body.productos;
-    if (req.body.pagado    !== undefined) deuda.pagado    = Number(req.body.pagado);
-    if (req.body.pagos     !== undefined) deuda.pagos     = req.body.pagos;
+    if (req.body.cliente     !== undefined) deuda.cliente     = req.body.cliente;
+    if (req.body.cedula      !== undefined) deuda.cedula      = req.body.cedula;
+    if (req.body.celular     !== undefined) deuda.celular     = req.body.celular;
+    if (req.body.direccion   !== undefined) deuda.direccion   = req.body.direccion;
+    if (req.body.total       !== undefined) deuda.total       = Number(req.body.total);
+    if (req.body.productos   !== undefined) deuda.productos   = req.body.productos;
+    if (req.body.pagado      !== undefined) deuda.pagado      = Number(req.body.pagado);
+    if (req.body.pagos       !== undefined) deuda.pagos       = req.body.pagos;
+    if (req.body.diasCredito !== undefined) deuda.diasCredito = Number(req.body.diasCredito);
 
     await docRef.update(deuda);
     res.json({ ok: true, deuda: { _id: docRef.id, ...deuda } });
@@ -1137,6 +1140,136 @@ app.delete('/deudas/:id', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Error de borrado" });
+  }
+});
+
+// =========================================================================
+// RIESGO CREDITICIO — SCORE AUTOMÁTICO SEGÚN HISTORIAL DE PAGOS
+// =========================================================================
+// Reglas del score (parte de 100 puntos, nunca baja de 0):
+//   - Por cada deuda YA PAGADA que se saldó DESPUÉS de su fecha de
+//     vencimiento -> penalización proporcional a los días de atraso.
+//   - Por cada deuda ABIERTA que YA está vencida (hoy > vencimiento y
+//     todavía debe) -> penalización proporcional a los días de atraso
+//     (más fuerte, porque es riesgo actual, no pasado).
+//   - Vencimiento de una deuda = fecha de creación + diasCredito
+//     (por defecto 30 días si no se especifica).
+//
+// Niveles:  score >=80 "bajo" (verde) · 50-79 "medio" (amarillo) · <50 "alto" (rojo)
+// =========================================================================
+
+function calcularScoreRiesgo(deudasCliente) {
+  let score = 100;
+  let diasAtrasoMax = 0;
+  let deudasVencidasAbiertas = 0;
+  const hoy = new Date();
+
+  deudasCliente.forEach(d => {
+    const diasCredito = Number(d.diasCredito || 30);
+    const fechaCreacion = new Date(d.fecha);
+    if (isNaN(fechaCreacion.getTime())) return;
+
+    const vencimiento = new Date(fechaCreacion.getTime() + diasCredito * 24 * 60 * 60 * 1000);
+    const total = Number(d.total || 0);
+    const pagado = Number(d.pagado || 0);
+    const pendiente = total - pagado;
+
+    if (pendiente <= 0.01) {
+      // Deuda saldada: revisamos si el último abono llegó tarde
+      const pagos = d.pagos || [];
+      if (pagos.length) {
+        const ultimoPago = new Date(pagos[pagos.length - 1].fecha);
+        if (!isNaN(ultimoPago.getTime()) && ultimoPago > vencimiento) {
+          const diasTarde = Math.ceil((ultimoPago - vencimiento) / (1000 * 60 * 60 * 24));
+          score -= Math.min(15, 3 + diasTarde * 0.3);
+          diasAtrasoMax = Math.max(diasAtrasoMax, diasTarde);
+        }
+      }
+    } else {
+      // Deuda todavía abierta
+      if (hoy > vencimiento) {
+        const diasTarde = Math.ceil((hoy - vencimiento) / (1000 * 60 * 60 * 24));
+        score -= Math.min(40, 5 + diasTarde * 0.5);
+        diasAtrasoMax = Math.max(diasAtrasoMax, diasTarde);
+        deudasVencidasAbiertas++;
+      }
+    }
+  });
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  const nivel = score >= 80 ? "bajo" : score >= 50 ? "medio" : "alto";
+
+  return { score, nivel, diasAtrasoMax, deudasVencidasAbiertas };
+}
+
+// Score individual de cada cliente que alguna vez tuvo crédito
+app.get('/riesgo', async (req, res) => {
+  try {
+    const [clientesSnap, deudasSnap] = await Promise.all([
+      db.collection('clientes').get(),
+      db.collection('deudas').get()
+    ]);
+
+    const clientes = mapearDocs(clientesSnap);
+    const deudas    = mapearDocs(deudasSnap);
+
+    const resultado = clientes.map(c => {
+      const deudasCliente = deudas.filter(d => d.cedula === c.cedula);
+      const { score, nivel, diasAtrasoMax, deudasVencidasAbiertas } = calcularScoreRiesgo(deudasCliente);
+
+      const totalCreditoHistorico = deudasCliente.reduce((s, d) => s + Number(d.total || 0), 0);
+      const totalAbonado          = deudasCliente.reduce((s, d) => s + Number(d.pagado || 0), 0);
+      const deudaActual           = Number((totalCreditoHistorico - totalAbonado).toFixed(2));
+
+      return {
+        _id:            c._id,
+        nombre:         c.nombre,
+        cedula:         c.cedula,
+        telefono:       c.telefono || "",
+        totalCreditoHistorico: Number(totalCreditoHistorico.toFixed(2)),
+        totalAbonado:          Number(totalAbonado.toFixed(2)),
+        deudaActual,
+        score,
+        nivel,
+        diasAtrasoMax,
+        deudasVencidasAbiertas,
+        cantidadDeudas: deudasCliente.length
+      };
+    })
+    .filter(c => c.cantidadDeudas > 0)
+    .sort((a, b) => a.score - b.score);
+
+    res.json(resultado);
+  } catch (err) {
+    console.error("❌ Error al calcular riesgo:", err.message);
+    res.status(500).json({ error: "Error al calcular el riesgo crediticio" });
+  }
+});
+
+// Resumen general del negocio: cuánto crédito se ha dado vs. cuánto han abonado
+app.get('/riesgo/resumen', async (req, res) => {
+  try {
+    const deudasSnap = await db.collection('deudas').get();
+    const deudas = mapearDocs(deudasSnap);
+
+    let totalCredito = 0, totalAbonado = 0;
+    deudas.forEach(d => {
+      totalCredito += Number(d.total  || 0);
+      totalAbonado += Number(d.pagado || 0);
+    });
+
+    const totalPendiente   = Number((totalCredito - totalAbonado).toFixed(2));
+    const pctRecuperacion  = totalCredito > 0 ? Number(((totalAbonado / totalCredito) * 100).toFixed(1)) : 0;
+
+    res.json({
+      totalCredito:  Number(totalCredito.toFixed(2)),
+      totalAbonado:  Number(totalAbonado.toFixed(2)),
+      totalPendiente,
+      pctRecuperacion
+    });
+  } catch (err) {
+    console.error("❌ Error en resumen de riesgo:", err.message);
+    res.status(500).json({ error: "Error al calcular resumen de riesgo" });
   }
 });
 
