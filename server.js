@@ -602,7 +602,8 @@ app.post('/productos', async (req, res) => {
       precioCompra: Number(req.body.precioCompra || 0),
       precioVenta:  Number(req.body.precioVenta  || 0),
       stock:        Number(req.body.stock        || 0),
-      caducidad:    req.body.caducidad ? req.body.caducidad : null
+      caducidad:    req.body.caducidad ? req.body.caducidad : null,
+      percha:       req.body.percha ? req.body.percha : null
     };
     await db.collection('productos').add(nuevoProducto);
     res.json({ ok: true });
@@ -620,6 +621,7 @@ app.put('/productos/:id', async (req, res) => {
     if (req.body.precioVenta  !== undefined) actualizaciones.precioVenta  = Number(req.body.precioVenta);
     if (req.body.stock        !== undefined) actualizaciones.stock        = Number(req.body.stock);
     if (req.body.caducidad    !== undefined) actualizaciones.caducidad    = req.body.caducidad ? req.body.caducidad : null;
+    if (req.body.percha       !== undefined) actualizaciones.percha       = req.body.percha ? req.body.percha : null;
 
     await db.collection('productos').doc(req.params.id).update(actualizaciones);
     res.json({ ok: true });
@@ -1146,18 +1148,6 @@ app.delete('/deudas/:id', async (req, res) => {
 // =========================================================================
 // RIESGO CREDITICIO — SCORE AUTOMÁTICO SEGÚN HISTORIAL DE PAGOS
 // =========================================================================
-// Reglas del score (parte de 100 puntos, nunca baja de 0):
-//   - Por cada deuda YA PAGADA que se saldó DESPUÉS de su fecha de
-//     vencimiento -> penalización proporcional a los días de atraso.
-//   - Por cada deuda ABIERTA que YA está vencida (hoy > vencimiento y
-//     todavía debe) -> penalización proporcional a los días de atraso
-//     (más fuerte, porque es riesgo actual, no pasado).
-//   - Vencimiento de una deuda = fecha de creación + diasCredito
-//     (por defecto 30 días si no se especifica).
-//
-// Niveles:  score >=80 "bajo" (verde) · 50-79 "medio" (amarillo) · <50 "alto" (rojo)
-// =========================================================================
-
 function calcularScoreRiesgo(deudasCliente) {
   let score = 100;
   let diasAtrasoMax = 0;
@@ -1175,7 +1165,6 @@ function calcularScoreRiesgo(deudasCliente) {
     const pendiente = total - pagado;
 
     if (pendiente <= 0.01) {
-      // Deuda saldada: revisamos si el último abono llegó tarde
       const pagos = d.pagos || [];
       if (pagos.length) {
         const ultimoPago = new Date(pagos[pagos.length - 1].fecha);
@@ -1186,7 +1175,6 @@ function calcularScoreRiesgo(deudasCliente) {
         }
       }
     } else {
-      // Deuda todavía abierta
       if (hoy > vencimiento) {
         const diasTarde = Math.ceil((hoy - vencimiento) / (1000 * 60 * 60 * 24));
         score -= Math.min(40, 5 + diasTarde * 0.5);
@@ -1202,7 +1190,6 @@ function calcularScoreRiesgo(deudasCliente) {
   return { score, nivel, diasAtrasoMax, deudasVencidasAbiertas };
 }
 
-// Score individual de cada cliente que alguna vez tuvo crédito
 app.get('/riesgo', async (req, res) => {
   try {
     const [clientesSnap, deudasSnap] = await Promise.all([
@@ -1246,7 +1233,6 @@ app.get('/riesgo', async (req, res) => {
   }
 });
 
-// Resumen general del negocio: cuánto crédito se ha dado vs. cuánto han abonado
 app.get('/riesgo/resumen', async (req, res) => {
   try {
     const deudasSnap = await db.collection('deudas').get();
@@ -1719,7 +1705,6 @@ app.get('/inventario/caducidades', async (req, res) => {
 // CHEQUES POR PAGAR (base de datos real — Firestore)
 // =========================================================================
 
-// Lista todos los cheques registrados
 app.get('/cheques', async (req, res) => {
   try {
     const snapshot = await db.collection('cheques').orderBy('fecha', 'asc').get();
@@ -1730,7 +1715,6 @@ app.get('/cheques', async (req, res) => {
   }
 });
 
-// Crea un cheque nuevo
 app.post('/cheques', async (req, res) => {
   try {
     const nuevo = {
@@ -1751,7 +1735,6 @@ app.post('/cheques', async (req, res) => {
   }
 });
 
-// Edita los datos de un cheque existente
 app.put('/cheques/:id', async (req, res) => {
   try {
     const actualizaciones = { actualizadoEn: Date.now() };
@@ -1769,7 +1752,6 @@ app.put('/cheques/:id', async (req, res) => {
   }
 });
 
-// Marca un cheque como pagado
 app.post('/cheques/pagar/:id', async (req, res) => {
   try {
     const docRef = db.collection('cheques').doc(req.params.id);
@@ -1785,7 +1767,6 @@ app.post('/cheques/pagar/:id', async (req, res) => {
   }
 });
 
-// Revierte el pago de un cheque (lo vuelve a dejar pendiente)
 app.post('/cheques/despagar/:id', async (req, res) => {
   try {
     await db.collection('cheques').doc(req.params.id).update({ pagado: false, fechaPago: null, actualizadoEn: Date.now() });
@@ -1795,7 +1776,6 @@ app.post('/cheques/despagar/:id', async (req, res) => {
   }
 });
 
-// Elimina un cheque
 app.delete('/cheques/:id', async (req, res) => {
   try {
     await db.collection('cheques').doc(req.params.id).delete();
@@ -1805,7 +1785,6 @@ app.delete('/cheques/:id', async (req, res) => {
   }
 });
 
-// Notas mensuales del calendario de cheques (una por mes, ej. "2026-07")
 app.get('/cheques-notas', async (req, res) => {
   try {
     const snapshot = await db.collection('notas-cheques').get();
@@ -1833,21 +1812,14 @@ function hoyISOServidor() {
 }
 
 // =========================================================================
-// ARCHIVOS — GESTOR TIPO GOOGLE DRIVE (Cloudinary para archivos + Firestore
-// para metadatos: nombre, carpeta, url, tipo, tamaño).
-//
-// Requiere las variables de entorno en Render:
-//   CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
-// (se obtienen gratis creando una cuenta en https://cloudinary.com, sin
-// tarjeta — están en el Dashboard al iniciar sesión).
+// ARCHIVOS — GESTOR TIPO GOOGLE DRIVE
 // =========================================================================
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits:  { fileSize: 100 * 1024 * 1024 } // 100MB por archivo
+  limits:  { fileSize: 100 * 1024 * 1024 }
 });
 
-// Lista carpetas + archivos dentro de una carpeta (o raíz si no se pasa "carpeta")
 app.get('/archivos', async (req, res) => {
   try {
     const carpetaId = req.query.carpeta || null;
@@ -1867,7 +1839,6 @@ app.get('/archivos', async (req, res) => {
   }
 });
 
-// Devuelve la cadena de carpetas padres (breadcrumb) de una carpeta dada
 app.get('/archivos/ruta/:id', async (req, res) => {
   try {
     const ruta = [];
@@ -1890,7 +1861,6 @@ app.get('/archivos/ruta/:id', async (req, res) => {
   }
 });
 
-// Crea una carpeta nueva
 app.post('/archivos/carpeta', async (req, res) => {
   try {
     const nombre   = (req.body.nombre || '').trim();
@@ -1906,7 +1876,6 @@ app.post('/archivos/carpeta', async (req, res) => {
   }
 });
 
-// Helper: sube un buffer a Cloudinary usando upload_stream (envuelto en Promise)
 function subirBufferACloudinary(buffer, opciones) {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(opciones, (err, resultado) => {
@@ -1917,7 +1886,6 @@ function subirBufferACloudinary(buffer, opciones) {
   });
 }
 
-// Sube un archivo (multipart/form-data: campo "archivo" + campo "carpetaId")
 app.post('/archivos/subir', upload.single('archivo'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
@@ -1932,8 +1900,8 @@ app.post('/archivos/subir', upload.single('archivo'), async (req, res) => {
 
     const resultadoSubida = await subirBufferACloudinary(req.file.buffer, {
       folder:        carpetaCloudinary,
-      public_id:     `${timestamp}-${nombreOrig}`.replace(/\.[^/.]+$/, ''), // sin extensión, Cloudinary la maneja aparte
-      resource_type: 'auto' // detecta automáticamente imagen/video/pdf/etc.
+      public_id:     `${timestamp}-${nombreOrig}`.replace(/\.[^/.]+$/, ''),
+      resource_type: 'auto'
     });
 
     const nuevoRegistro = {
@@ -1955,7 +1923,6 @@ app.post('/archivos/subir', upload.single('archivo'), async (req, res) => {
   }
 });
 
-// Agrega un "archivo" de tipo enlace (link externo, ej. Google Drive) sin pasar por Cloudinary
 app.post('/archivos/enlace', async (req, res) => {
   try {
     const nombre = (req.body.nombre || '').trim();
@@ -1986,7 +1953,6 @@ app.post('/archivos/enlace', async (req, res) => {
   }
 });
 
-// Elimina un archivo (Storage + Firestore)
 app.delete('/archivos/:id', async (req, res) => {
   try {
     const docRef = db.collection('archivos').doc(req.params.id);
@@ -2007,7 +1973,6 @@ app.delete('/archivos/:id', async (req, res) => {
   }
 });
 
-// Elimina una carpeta y TODO su contenido (subcarpetas + archivos) recursivamente
 async function borrarCarpetaRecursiva(carpetaId) {
   const [subcarpetasSnap, archivosSnap] = await Promise.all([
     db.collection('carpetas').where('parentId', '==', carpetaId).get(),
