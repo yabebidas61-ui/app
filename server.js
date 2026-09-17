@@ -1001,6 +1001,8 @@ app.post('/ventas', async (req, res) => {
       });
     }
 
+    let claveAccesoSRI = null;
+
     if (req.body.tipo === "efectivo" || req.body.tipo === "transferencia") {
       const sri = await emitirFacturaInvoka({
         cliente:   req.body.cliente   || "CONSUMIDOR FINAL",
@@ -1012,6 +1014,7 @@ app.post('/ventas', async (req, res) => {
       });
 
       if (sri.ok) {
+        claveAccesoSRI = sri.claveAcceso || null;
         await ventaRef.update({
           claveAccesoSRI:     sri.claveAcceso   || null,
           autorizacionSRI:    sri.autorizacion  || null,
@@ -1022,6 +1025,40 @@ app.post('/ventas', async (req, res) => {
         console.warn(`⚠️ Invoka no autorizó la factura para venta ${ventaRef.id}:`, sri.error);
         await ventaRef.update({ facturaElectronica: false, errorSRI: sri.error || "Sin detalle" });
       }
+    }
+
+    // 📧 Enviar comprobante de venta automáticamente al correo del cliente
+    // (ya no depende de que el navegador/frontend haga el fetch aparte).
+    if (req.body.correo && BREVO_API_KEY) {
+      const datosCorreo = {
+        cliente:        req.body.cliente,
+        cedula:         req.body.cedula,
+        subtotal:       Number(req.body.subtotal || 0),
+        pct:            Number(req.body.descuentoPct || 0),
+        descuentoMonto: Number(req.body.descuentoMonto || 0),
+        totalFinal:     Number(req.body.total || 0),
+        tasaPct:        Number(req.body.tasaInteres || 0),
+        montoInteres:   Number(req.body.montoInteres || 0),
+        meses:          Number(req.body.meses || 0),
+        pago:           Number(req.body.pago || 0),
+        vuelto:         Number(req.body.vuelto || 0),
+        bancoNombre:    req.body.banco       || "",
+        bancoCuenta:    req.body.cuenta      || "",
+        comprobante:    req.body.comprobante || "",
+        claveAccesoSRI
+      };
+
+      const htmlFactura = generarHTMLCorreo(datosCorreo, req.body.productos || [], req.body.tipo);
+      const subject = `🧾 Comprobante Digital — ${datosCorreo.cliente || "Cliente"} · Total: $${datosCorreo.totalFinal.toFixed(2)}`;
+
+      enviarCorreoBrevo({
+        to:       req.body.correo,
+        subject,
+        html:     htmlFactura,
+        fromName: 'Agro Naranjito #1'
+      })
+      .then(r => console.log("📧 Resultado envío correo de venta:", r.ok ? "OK" : r.error))
+      .catch(err => console.warn("⚠️ No se pudo enviar el correo de venta:", err.message));
     }
 
     res.json({ ok: true });
@@ -1177,13 +1214,39 @@ app.post('/deudas/pagar', async (req, res) => {
       await cajaRef.update(caja);
     }
 
+    // 📧 Enviar comprobante de abono automáticamente si el cliente tiene correo registrado
+    const restanteFinal = deuda.total - deuda.pagado;
+
+    if (deuda.correo && BREVO_API_KEY) {
+      const htmlAbono = generarHTMLCorreoAbono({
+        cliente:     deuda.cliente,
+        monto,
+        total:       deuda.total,
+        pagado:      deuda.pagado,
+        restante:    restanteFinal,
+        tipoPago:    metodoPago,
+        banco,
+        comprobante,
+        remitente
+      });
+
+      enviarCorreoBrevo({
+        to:       deuda.correo,
+        subject:  `💰 Comprobante de Abono — ${deuda.cliente || "Cliente"} · $${monto.toFixed(2)}`,
+        html:     htmlAbono,
+        fromName: 'Agro Naranjito #1'
+      })
+      .then(r => console.log("📧 Resultado envío correo de abono:", r.ok ? "OK" : r.error))
+      .catch(err => console.warn("⚠️ No se pudo enviar el correo de abono:", err.message));
+    }
+
     res.json({
       cliente:   deuda.cliente,
       cedula:    deuda.cedula    || "-",
       celular:   deuda.celular   || "",
       monto,
       total:     deuda.total,
-      restante:  deuda.total - deuda.pagado,
+      restante:  restanteFinal,
       pagado:    deuda.pagado,
       pagos:     deuda.pagos    || [],
       productos: deuda.productos || []
