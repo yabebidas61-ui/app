@@ -445,6 +445,53 @@ function generarHTMLCorreo(datos, carrito, tipoPago) {
   `;
 }
 
+// ── Helper: Generación dinámica del cuerpo HTML del correo de ABONO ────────
+function generarHTMLCorreoAbono(datos) {
+  const { cliente, monto, total, pagado, restante, tipoPago, banco, comprobante, remitente } = datos;
+  const fecha = new Date().toLocaleString("es-EC", { dateStyle: "long", timeStyle: "short" });
+
+  const estadoFinal = restante <= 0 ? `
+    <div style="background:#eafaf1;border:1px solid #27ae60;border-radius:6px;padding:10px 14px;text-align:center;margin-top:10px;">
+      <p style="margin:0;color:#27ae60;font-weight:700;">✅ Deuda saldada por completo. ¡Gracias!</p>
+    </div>` : "";
+
+  const detallePago = tipoPago === "transferencia" ? `
+    <tr><td style="padding:4px 0;color:#555;">Entidad Bancaria</td><td style="text-align:right;font-weight:500;">${banco || "-"}</td></tr>
+    <tr><td style="padding:4px 0;color:#555;">Nº Comprobante</td><td style="text-align:right;font-weight:bold;">${comprobante || "-"}</td></tr>
+  ` : "";
+
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
+  <body style="margin:0;padding:0;background-color:#f5f6fa;font-family:'Segoe UI',Arial,sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f6fa;padding:30px 0;">
+      <tr><td align="center">
+        <table width="500" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 15px rgba(0,0,0,0.06);">
+          <tr><td style="background-color:#27ae60;padding:24px 30px;text-align:center;">
+            <h1 style="margin:0;color:#ffffff;font-size:22px;">AGRO NARANJITO #1</h1>
+            <p style="margin:4px 0 0;color:rgba(255,255,255,0.85);font-size:13px;">Comprobante de Abono · ${fecha}</p>
+          </td></tr>
+          <tr><td style="padding:24px 30px;">
+            <p style="margin:0 0 6px;font-size:12px;color:#888;text-transform:uppercase;">Cliente</p>
+            <p style="margin:0 0 16px;font-size:17px;font-weight:600;color:#1e272e;">${cliente || "Cliente"}</p>
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr><td style="padding:4px 0;color:#555;">Monto Abonado</td><td style="text-align:right;font-size:18px;font-weight:700;color:#27ae60;">$${Number(monto).toFixed(2)}</td></tr>
+              ${detallePago}
+              <tr><td colspan="2"><hr style="border:none;border-top:1px dashed #eee;margin:10px 0;"></td></tr>
+              <tr><td style="color:#555;">Deuda Total</td><td style="text-align:right;">$${Number(total).toFixed(2)}</td></tr>
+              <tr><td style="color:#555;">Total Pagado</td><td style="text-align:right;">$${Number(pagado).toFixed(2)}</td></tr>
+              <tr><td style="font-weight:700;">Saldo Restante</td><td style="text-align:right;font-weight:700;color:#ff3f34;">$${Number(restante).toFixed(2)}</td></tr>
+            </table>
+            ${estadoFinal}
+          </td></tr>
+          <tr><td style="background-color:#f8f9fa;padding:18px 30px;text-align:center;border-top:1px solid #f0f0f0;">
+            <p style="margin:0;font-size:13px;color:#2c3e50;">¡Gracias por su pago! 😊</p>
+            <p style="margin:4px 0 0;font-size:11px;color:#7f8c8d;">Agro Naranjito #1 · Comprobante automático de abono.</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body></html>`;
+}
+
 const mapearDocs = (snapshot) => {
   const docs = [];
   snapshot.forEach(doc => docs.push({ _id: doc.id, ...doc.data() }));
@@ -846,6 +893,40 @@ app.post('/correo/factura', async (req, res) => {
   } catch (err) {
     console.error("❌ Error crítico en Brevo API:", err.message);
     res.status(500).json({ error: "Fallo crítico al despachar correo electrónico.", detalle: err.message });
+  }
+});
+
+app.post('/correo/abono', async (req, res) => {
+  console.log("📨 Petición entrante POST /correo/abono para:", req.body?.correo);
+  const { correo, datos } = req.body;
+
+  if (!correo) {
+    return res.status(400).json({ error: "Correo destinatario obligatorio" });
+  }
+  if (!BREVO_API_KEY) {
+    return res.status(503).json({ error: "El servicio de correo (Brevo API) no está configurado." });
+  }
+
+  try {
+    const html = generarHTMLCorreoAbono(datos);
+    const subject = `💰 Comprobante de Abono — ${datos?.cliente || "Cliente"} · $${Number(datos?.monto || 0).toFixed(2)}`;
+
+    const resultado = await enviarCorreoBrevo({
+      to: correo,
+      subject,
+      html,
+      fromName: 'Agro Naranjito #1'
+    });
+
+    if (!resultado.ok) {
+      throw new Error(resultado.error);
+    }
+
+    console.log(`📧 Correo de abono enviado a: ${correo}`);
+    res.json({ ok: true, mensaje: `Correo de abono enviado a ${correo}` });
+  } catch (err) {
+    console.error("❌ Error al enviar correo de abono:", err.message);
+    res.status(500).json({ error: "Fallo al enviar correo de abono", detalle: err.message });
   }
 });
 
