@@ -34,6 +34,12 @@ try {
 const db = admin.firestore();
 
 // =========================================================================
+// 1.c INTEGRACIÓN WHATSAPP (consultas y reportes automáticos del negocio)
+// =========================================================================
+const { iniciarWhatsApp } = require('./whatsapp');
+iniciarWhatsApp(app, db);
+
+// =========================================================================
 // 1.b CONFIGURACIÓN DE CLOUDINARY (almacenamiento de archivos)
 // =========================================================================
 if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
