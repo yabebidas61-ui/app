@@ -1296,6 +1296,78 @@ app.delete('/deudas/:id', async (req, res) => {
 });
 
 // =========================================================================
+// DEUDAS — DOCUMENTOS ESCANEADOS (Cédula / Pagaré)
+// =========================================================================
+
+app.post('/deudas/:id/documento', async (req, res) => {
+  try {
+    if (!process.env.CLOUDINARY_CLOUD_NAME) {
+      return res.status(503).json({ error: 'Cloudinary no está configurado en el servidor (faltan variables CLOUDINARY_*)' });
+    }
+
+    const { tipo, imagenBase64 } = req.body;
+    if (!tipo) return res.status(400).json({ error: 'Falta el tipo de documento (cedula o pagare)' });
+    if (!imagenBase64) return res.status(400).json({ error: 'No se recibió la imagen escaneada' });
+
+    const docRef = db.collection('deudas').doc(req.params.id);
+    const doc    = await docRef.get();
+    if (!doc.exists) return res.status(404).json({ error: 'Deuda no encontrada' });
+
+    const timestamp = Date.now();
+    const resultadoSubida = await cloudinary.uploader.upload(imagenBase64, {
+      folder:        `deudas/${req.params.id}`,
+      public_id:     `${tipo}-${timestamp}`,
+      resource_type: 'image'
+    });
+
+    const nuevoDocumento = {
+      tipo,
+      url:      resultadoSubida.secure_url,
+      publicId: resultadoSubida.public_id,
+      fecha:    timestamp
+    };
+
+    const deuda = doc.data();
+    const documentos = Array.isArray(deuda.documentos) ? deuda.documentos : [];
+    documentos.push(nuevoDocumento);
+    await docRef.update({ documentos });
+
+    res.json({ ok: true, documento: nuevoDocumento });
+  } catch (err) {
+    console.error('❌ Error al guardar documento escaneado:', err.message);
+    res.status(500).json({ error: 'No se pudo guardar el documento escaneado', detalle: err.message });
+  }
+});
+
+app.post('/deudas/:id/documento/eliminar', async (req, res) => {
+  try {
+    const { publicId } = req.body;
+    if (!publicId) return res.status(400).json({ error: 'Falta el identificador del documento' });
+
+    const docRef = db.collection('deudas').doc(req.params.id);
+    const doc    = await docRef.get();
+    if (!doc.exists) return res.status(404).json({ error: 'Deuda no encontrada' });
+
+    const deuda = doc.data();
+    const documentosActuales = Array.isArray(deuda.documentos) ? deuda.documentos : [];
+    const documentoBorrado   = documentosActuales.find(d => d.publicId === publicId);
+    const documentos         = documentosActuales.filter(d => d.publicId !== publicId);
+
+    if (documentoBorrado && process.env.CLOUDINARY_CLOUD_NAME) {
+      await cloudinary.uploader.destroy(documentoBorrado.publicId, { resource_type: 'image' }).catch(e =>
+        console.warn('⚠️ No se pudo borrar el documento en Cloudinary:', e.message)
+      );
+    }
+
+    await docRef.update({ documentos });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('❌ Error al eliminar documento escaneado:', err.message);
+    res.status(500).json({ error: 'No se pudo eliminar el documento escaneado' });
+  }
+});
+
+// =========================================================================
 // RIESGO CREDITICIO — SCORE AUTOMÁTICO SEGÚN HISTORIAL DE PAGOS
 // =========================================================================
 function calcularScoreRiesgo(deudasCliente) {
