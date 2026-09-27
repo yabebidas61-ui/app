@@ -34,12 +34,6 @@ try {
 const db = admin.firestore();
 
 // =========================================================================
-// 1.c INTEGRACIÓN WHATSAPP (consultas y reportes automáticos del negocio)
-// =========================================================================
-const { iniciarWhatsApp } = require('./whatsapp');
-iniciarWhatsApp(app, db);
-
-// =========================================================================
 // 1.b CONFIGURACIÓN DE CLOUDINARY (almacenamiento de archivos)
 // =========================================================================
 if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
@@ -1296,74 +1290,86 @@ app.delete('/deudas/:id', async (req, res) => {
 });
 
 // =========================================================================
-// DEUDAS — DOCUMENTOS ESCANEADOS (Cédula / Pagaré)
+// PEDIDOS A PROVEEDORES (PREFORMAS)
 // =========================================================================
 
-app.post('/deudas/:id/documento', async (req, res) => {
+app.get('/pedidos', async (req, res) => {
   try {
-    if (!process.env.CLOUDINARY_CLOUD_NAME) {
-      return res.status(503).json({ error: 'Cloudinary no está configurado en el servidor (faltan variables CLOUDINARY_*)' });
-    }
-
-    const { tipo, imagenBase64 } = req.body;
-    if (!tipo) return res.status(400).json({ error: 'Falta el tipo de documento (cedula o pagare)' });
-    if (!imagenBase64) return res.status(400).json({ error: 'No se recibió la imagen escaneada' });
-
-    const docRef = db.collection('deudas').doc(req.params.id);
-    const doc    = await docRef.get();
-    if (!doc.exists) return res.status(404).json({ error: 'Deuda no encontrada' });
-
-    const timestamp = Date.now();
-    const resultadoSubida = await cloudinary.uploader.upload(imagenBase64, {
-      folder:        `deudas/${req.params.id}`,
-      public_id:     `${tipo}-${timestamp}`,
-      resource_type: 'image'
-    });
-
-    const nuevoDocumento = {
-      tipo,
-      url:      resultadoSubida.secure_url,
-      publicId: resultadoSubida.public_id,
-      fecha:    timestamp
-    };
-
-    const deuda = doc.data();
-    const documentos = Array.isArray(deuda.documentos) ? deuda.documentos : [];
-    documentos.push(nuevoDocumento);
-    await docRef.update({ documentos });
-
-    res.json({ ok: true, documento: nuevoDocumento });
+    const snapshot = await db.collection('pedidos').orderBy('fechaPreforma', 'desc').get();
+    res.json(mapearDocs(snapshot));
   } catch (err) {
-    console.error('❌ Error al guardar documento escaneado:', err.message);
-    res.status(500).json({ error: 'No se pudo guardar el documento escaneado', detalle: err.message });
+    console.error("❌ Error al obtener pedidos:", err.message);
+    res.status(500).json([]);
   }
 });
 
-app.post('/deudas/:id/documento/eliminar', async (req, res) => {
+app.post('/pedidos', async (req, res) => {
   try {
-    const { publicId } = req.body;
-    if (!publicId) return res.status(400).json({ error: 'Falta el identificador del documento' });
+    const productos = Array.isArray(req.body.productos) ? req.body.productos.map(p => ({
+      nombre:           p.nombre || "Sin Nombre",
+      medida:           p.medida || "-",
+      cantidadPedida:   Number(p.cantidadPedida || 0),
+      precioUnitario:   Number(p.precioUnitario || 0),
+      cantidadRecibida: null
+    })) : [];
 
-    const docRef = db.collection('deudas').doc(req.params.id);
+    const nuevo = {
+      quienPide:     req.body.quienPide || "",
+      proveedor:     req.body.proveedor || "Sin especificar",
+      productos,
+      totalPreforma: Number(req.body.totalPreforma || 0),
+      estado:        "pendiente",
+      fechaPreforma: new Date().toISOString(),
+      fechaLlegada:  null
+    };
+
+    const resultado = await db.collection('pedidos').add(nuevo);
+    res.json({ ok: true, pedido: { _id: resultado.id, ...nuevo } });
+  } catch (err) {
+    console.error("❌ Error al crear pedido:", err.message);
+    res.status(500).json({ error: "No se pudo registrar la preforma" });
+  }
+});
+
+app.put('/pedidos/recibir/:id', async (req, res) => {
+  try {
+    const docRef = db.collection('pedidos').doc(req.params.id);
     const doc    = await docRef.get();
-    if (!doc.exists) return res.status(404).json({ error: 'Deuda no encontrada' });
+    if (!doc.exists) return res.status(404).json({ error: "Pedido no encontrado" });
 
-    const deuda = doc.data();
-    const documentosActuales = Array.isArray(deuda.documentos) ? deuda.documentos : [];
-    const documentoBorrado   = documentosActuales.find(d => d.publicId === publicId);
-    const documentos         = documentosActuales.filter(d => d.publicId !== publicId);
+    const productos = Array.isArray(req.body.productos) ? req.body.productos : doc.data().productos;
+    const estado    = req.body.estado || "incompleto";
 
-    if (documentoBorrado && process.env.CLOUDINARY_CLOUD_NAME) {
-      await cloudinary.uploader.destroy(documentoBorrado.publicId, { resource_type: 'image' }).catch(e =>
-        console.warn('⚠️ No se pudo borrar el documento en Cloudinary:', e.message)
-      );
+    await docRef.update({
+      productos,
+      estado,
+      fechaLlegada: new Date().toISOString()
+    });
+
+    // Si llegó todo o parte, sumamos el stock recibido a Bodega automáticamente
+    // (comenta este bloque "for" si prefieres actualizar el stock manualmente en Bodega).
+    for (const it of productos) {
+      if (it.cantidadRecibida && it.cantidadRecibida > 0) {
+        const prodSnap = await db.collection('productos').where('nombre', '==', it.nombre).get();
+        if (!prodSnap.empty) {
+          const prodDoc = prodSnap.docs[0];
+          const stockActual = prodDoc.data().stock || 0;
+          await prodDoc.ref.update({ stock: stockActual + Number(it.cantidadRecibida) });
+          await registrarMovimiento({
+            tipo:     "entrada",
+            codigo:   prodDoc.data().codigo || "-",
+            nombre:   it.nombre,
+            cantidad: Number(it.cantidadRecibida),
+            motivo:   `Llegada de pedido a proveedor`
+          });
+        }
+      }
     }
 
-    await docRef.update({ documentos });
     res.json({ ok: true });
   } catch (err) {
-    console.error('❌ Error al eliminar documento escaneado:', err.message);
-    res.status(500).json({ error: 'No se pudo eliminar el documento escaneado' });
+    console.error("❌ Error al registrar llegada del pedido:", err.message);
+    res.status(500).json({ error: "No se pudo registrar la llegada" });
   }
 });
 
