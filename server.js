@@ -8,9 +8,30 @@ const { v2: cloudinary } = require('cloudinary');
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));   // /sri/firma envía el .p12 en base64
 app.use(express.urlencoded({ extended: true }));
+
+// 🔒 No exponer código fuente, .env, package.json, etc. (antes express.static('.') los publicaba)
+app.use((req, res, next) => {
+  const p = decodeURIComponent(req.path).toLowerCase();
+  if (/\.(js|json|env|md|lock|map|log)$/.test(p) || p.split('/').some(seg => seg.startsWith('.')) || p.includes('node_modules')) {
+    return res.status(404).end();
+  }
+  next();
+});
 app.use(express.static('.'));
+
+// 🔒 Protección opcional: si defines ADMIN_TOKEN en Render, las rutas sensibles exigen
+// el encabezado  x-admin-token. Si no lo defines, todo funciona como antes.
+function requiereAdmin(req, res, next) {
+  const token = process.env.ADMIN_TOKEN;
+  if (!token) return next();
+  if (req.headers['x-admin-token'] === token) return next();
+  return res.status(401).json({ error: "No autorizado" });
+}
+
+// Escapa texto antes de meterlo en HTML (correos)
+const escH = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // =========================================================================
 // 1. CONFIGURACIÓN DE FIREBASE ADMIN SDK
@@ -32,6 +53,7 @@ try {
 }
 
 const db = admin.firestore();
+const FieldValue = admin.firestore.FieldValue;
 
 // =========================================================================
 // 1.b CONFIGURACIÓN DE CLOUDINARY (almacenamiento de archivos)
@@ -93,7 +115,7 @@ async function enviarCorreoBrevo({ to, subject, html, fromName, fromEmail }) {
 // 3. INVOKA — FACTURACIÓN ELECTRÓNICA SRI
 // =========================================================================
 
-app.post('/sri/configurar', async (req, res) => {
+app.post('/sri/configurar', requiereAdmin, async (req, res) => {
   if (!process.env.INVOKA_API_KEY) {
     return res.status(500).json({ error: "INVOKA_API_KEY no configurada en Render" });
   }
@@ -126,7 +148,7 @@ app.post('/sri/configurar', async (req, res) => {
   }
 });
 
-app.post('/sri/firma', async (req, res) => {
+app.post('/sri/firma', requiereAdmin, async (req, res) => {
   if (!process.env.INVOKA_API_KEY) {
     return res.status(500).json({ error: "INVOKA_API_KEY no configurada en Render" });
   }
@@ -178,7 +200,7 @@ app.post('/sri/firma', async (req, res) => {
   }
 });
 
-app.get('/sri/estado', async (req, res) => {
+app.get('/sri/estado', requiereAdmin, async (req, res) => {
   if (!process.env.INVOKA_API_KEY) {
     return res.status(500).json({ error: "INVOKA_API_KEY no configurada" });
   }
@@ -195,13 +217,16 @@ app.get('/sri/estado', async (req, res) => {
   }
 });
 
+// Secuencial con transacción: dos ventas simultáneas ya no repiten número
 async function obtenerSiguienteSecuencial() {
   const ref = db.collection('config').doc('secuencialFactura');
-  const doc = await ref.get();
-  let actual = doc.exists ? (doc.data().valor || 0) : 0;
-  actual += 1;
-  await ref.set({ valor: actual });
-  return String(actual).padStart(9, '0');
+  const valor = await db.runTransaction(async (t) => {
+    const doc = await t.get(ref);
+    const siguiente = (doc.exists ? (doc.data().valor || 0) : 0) + 1;
+    t.set(ref, { valor: siguiente });
+    return siguiente;
+  });
+  return String(valor).padStart(9, '0');
 }
 
 async function emitirFacturaInvoka({ cliente, cedula, correo, carrito, descuento = 0, total }) {
@@ -218,14 +243,19 @@ async function emitirFacturaInvoka({ cliente, cedula, correo, carrito, descuento
   const fechaEmision = `${hoy.getFullYear()}/${String(hoy.getMonth() + 1).padStart(2, '0')}/${String(hoy.getDate()).padStart(2, '0')}`;
   const secuencial = await obtenerSiguienteSecuencial();
 
-  let subtotal15Acumulado = 0;
+  // IVA configurable desde Render (por defecto 15%, tipo_iva 4). Confirma con tu contador
+  // si algunos insumos agrícolas van con 0%.
+  const IVA_PCT  = Number(process.env.INVOKA_IVA_PCT  ?? 15);
+  const TIPO_IVA = Number(process.env.INVOKA_TIPO_IVA ?? 4);
+
+  let subtotalAcumulado = 0;
 
   const items = (carrito || []).map((p, i) => {
     const cantidad = Number(p.amount || p.cantidad || 1);
     const precio   = Number(p.precio || 0);
     const subtotalItem = precio * cantidad;
 
-    subtotal15Acumulado += subtotalItem;
+    subtotalAcumulado += subtotalItem;
 
     return {
       codigo_principal:          p.codigo || `PROD-${i + 1}`,
@@ -235,14 +265,14 @@ async function emitirFacturaInvoka({ cliente, cedula, correo, carrito, descuento
       descuento:                 0,
       precio_total_sin_impuesto: Number(subtotalItem.toFixed(2)),
       tipoproducto:              1,
-      tipo_iva:                  4
+      tipo_iva:                  TIPO_IVA
     };
   });
 
-  const subtotalConIva15 = Number(subtotal15Acumulado.toFixed(2));
+  const subtotalConIva15 = Number(subtotalAcumulado.toFixed(2));
   const totalDescuento   = Number(Number(descuento).toFixed(2));
   const baseImponible    = Math.max(0, subtotalConIva15 - totalDescuento);
-  const valorIva         = Number((baseImponible * 0.15).toFixed(2));
+  const valorIva         = Number((baseImponible * (IVA_PCT / 100)).toFixed(2));
   const totalAPagar      = Number((baseImponible + valorIva).toFixed(2));
 
   const facturaData = {
@@ -328,8 +358,8 @@ function generarHTMLCorreo(datos, carrito, tipoPago) {
 
   const filas = (carrito || []).map(p => `
     <tr>
-      <td style="padding:8px 10px; border-bottom:1px solid #f0f0f0; text-align:left;">${p.nombre}</td>
-      <td style="padding:8px 10px; border-bottom:1px solid #f0f0f0; text-align:center;">${p.amount || p.cantidad}</td>
+      <td style="padding:8px 10px; border-bottom:1px solid #f0f0f0; text-align:left;">${escH(p.nombre)}</td>
+      <td style="padding:8px 10px; border-bottom:1px solid #f0f0f0; text-align:center;">${escH(p.amount || p.cantidad)}</td>
       <td style="padding:8px 10px; border-bottom:1px solid #f0f0f0; text-align:right;">$${Number(p.precio).toFixed(2)}</td>
       <td style="padding:8px 10px; border-bottom:1px solid #f0f0f0; text-align:right; font-weight:bold;">$${(Number(p.precio) * Number(p.amount || p.cantidad)).toFixed(2)}</td>
     </tr>
@@ -343,14 +373,14 @@ function generarHTMLCorreo(datos, carrito, tipoPago) {
     `;
   } else if (tipoPago === "transferencia") {
     detallePago = `
-      <tr><td style="padding:4px 0; color:#555;">Entidad Bancaria</td><td style="text-align:right; font-weight:500;">${bancoNombre}</td></tr>
-      <tr><td style="padding:4px 0; color:#555;">Nº de Cuenta</td><td style="text-align:right; font-family:monospace;">${bancoCuenta}</td></tr>
-      <tr><td style="padding:4px 0; color:#555;">Nº Referencia / Código</td><td style="text-align:right; font-weight:bold; color:#1e272e;">${comprobante}</td></tr>
+      <tr><td style="padding:4px 0; color:#555;">Entidad Bancaria</td><td style="text-align:right; font-weight:500;">${escH(bancoNombre)}</td></tr>
+      <tr><td style="padding:4px 0; color:#555;">Nº de Cuenta</td><td style="text-align:right; font-family:monospace;">${escH(bancoCuenta)}</td></tr>
+      <tr><td style="padding:4px 0; color:#555;">Nº Referencia / Código</td><td style="text-align:right; font-weight:bold; color:#1e272e;">${escH(comprobante)}</td></tr>
     `;
   } else if (tipoPago === "credito") {
     detallePago = `
-      <tr><td style="padding:4px 0; color:#555;">Tasa Diferido (${tasaPct}%)</td><td style="text-align:right; color:#e67e22;">+$${Number(montoInteres).toFixed(2)}</td></tr>
-      <tr><td style="padding:4px 0; color:#555;">Plazo Acordado</td><td style="text-align:right; font-weight:500;">${meses} meses</td></tr>
+      <tr><td style="padding:4px 0; color:#555;">Tasa Diferido (${escH(tasaPct)}%)</td><td style="text-align:right; color:#e67e22;">+$${Number(montoInteres).toFixed(2)}</td></tr>
+      <tr><td style="padding:4px 0; color:#555;">Plazo Acordado</td><td style="text-align:right; font-weight:500;">${escH(meses)} meses</td></tr>
     `;
   }
 
@@ -360,7 +390,7 @@ function generarHTMLCorreo(datos, carrito, tipoPago) {
       <td style="text-align:right;">$${Number(subtotal).toFixed(2)}</td>
     </tr>
     <tr>
-      <td style="padding:4px 0; color:#e03329;">Descuento Aplicado (${pct}%)</td>
+      <td style="padding:4px 0; color:#e03329;">Descuento Aplicado (${escH(pct)}%)</td>
       <td style="text-align:right; color:#e03329; font-weight:500;">-$${Number(descuentoMonto).toFixed(2)}</td>
     </tr>
   ` : "";
@@ -370,7 +400,7 @@ function generarHTMLCorreo(datos, carrito, tipoPago) {
       <td colspan="2" style="padding:8px 0;">
         <div style="background:#eafaf1; border:1px solid #27ae60; border-radius:6px; padding:8px 12px; text-align:center;">
           <p style="margin:0; font-size:11px; color:#27ae60; font-weight:700;">✅ FACTURA ELECTRÓNICA AUTORIZADA — SRI</p>
-          <p style="margin:4px 0 0; font-size:10px; color:#555; font-family:monospace; word-break:break-all;">${claveAccesoSRI}</p>
+          <p style="margin:4px 0 0; font-size:10px; color:#555; font-family:monospace; word-break:break-all;">${escH(claveAccesoSRI)}</p>
         </div>
       </td>
     </tr>
@@ -395,9 +425,9 @@ function generarHTMLCorreo(datos, carrito, tipoPago) {
           <tr>
             <td style="padding:24px 30px 10px;">
               <p style="margin:0 0 4px; font-size:12px; color:#888; text-transform:uppercase; letter-spacing:.5px;">Titular del Documento</p>
-              <p style="margin:0; font-size:17px; font-weight:600; color:#1e272e;">${cliente || "Consumidor Final"}</p>
-              ${cedula ? `<p style="margin:4px 0 0; font-size:13px; color:#555;"><b>RUC / Cédula:</b> ${cedula}</p>` : ""}
-              <span style="display:inline-block; margin-top:10px; padding:4px 14px; background-color:${tipoBadgeColor}; color:#ffffff; border-radius:20px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.3px;">${tipoPago}</span>
+              <p style="margin:0; font-size:17px; font-weight:600; color:#1e272e;">${escH(cliente || "Consumidor Final")}</p>
+              ${cedula ? `<p style="margin:4px 0 0; font-size:13px; color:#555;"><b>RUC / Cédula:</b> ${escH(cedula)}</p>` : ""}
+              <span style="display:inline-block; margin-top:10px; padding:4px 14px; background-color:${tipoBadgeColor}; color:#ffffff; border-radius:20px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.3px;">${escH(tipoPago)}</span>
             </td>
           </tr>
           <tr>
@@ -456,8 +486,8 @@ function generarHTMLCorreoAbono(datos) {
     </div>` : "";
 
   const detallePago = tipoPago === "transferencia" ? `
-    <tr><td style="padding:4px 0;color:#555;">Entidad Bancaria</td><td style="text-align:right;font-weight:500;">${banco || "-"}</td></tr>
-    <tr><td style="padding:4px 0;color:#555;">Nº Comprobante</td><td style="text-align:right;font-weight:bold;">${comprobante || "-"}</td></tr>
+    <tr><td style="padding:4px 0;color:#555;">Entidad Bancaria</td><td style="text-align:right;font-weight:500;">${escH(banco || "-")}</td></tr>
+    <tr><td style="padding:4px 0;color:#555;">Nº Comprobante</td><td style="text-align:right;font-weight:bold;">${escH(comprobante || "-")}</td></tr>
   ` : "";
 
   return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
@@ -471,7 +501,7 @@ function generarHTMLCorreoAbono(datos) {
           </td></tr>
           <tr><td style="padding:24px 30px;">
             <p style="margin:0 0 6px;font-size:12px;color:#888;text-transform:uppercase;">Cliente</p>
-            <p style="margin:0 0 16px;font-size:17px;font-weight:600;color:#1e272e;">${cliente || "Cliente"}</p>
+            <p style="margin:0 0 16px;font-size:17px;font-weight:600;color:#1e272e;">${escH(cliente || "Cliente")}</p>
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr><td style="padding:4px 0;color:#555;">Monto Abonado</td><td style="text-align:right;font-size:18px;font-weight:700;color:#27ae60;">$${Number(monto).toFixed(2)}</td></tr>
               ${detallePago}
@@ -542,7 +572,7 @@ async function ejecutarRevisionCaducidades() {
 
     const mapearFilasHTML = (arr, badgeColor, textoBadge) => arr.map(i => `
       <tr>
-        <td style="padding:10px; border-bottom:1px solid #eee; text-align:left;"><b>${i.nombre}</b><br><small style="color:#777;">Cód: ${i.codigo}</small></td>
+        <td style="padding:10px; border-bottom:1px solid #eee; text-align:left;"><b>${escH(i.nombre)}</b><br><small style="color:#777;">Cód: ${escH(i.codigo)}</small></td>
         <td style="padding:10px; border-bottom:1px solid #eee; text-align:center; font-weight:bold;">${i.stock} un.</td>
         <td style="padding:10px; border-bottom:1px solid #eee; text-align:center; font-family:monospace;">${i.fecha}</td>
         <td style="padding:10px; border-bottom:1px solid #eee; text-align:right;"><span style="background:${badgeColor}; color:white; padding:3px 8px; border-radius:5px; font-size:12px; font-weight:bold;">${textoBadge} (${i.dias < 0 ? 'Hace ' + Math.abs(i.dias) : i.dias} d)</span></td>
@@ -609,6 +639,7 @@ app.get('/health', (req, res) => {
   res.json({ ok: true, message: "NEXUS Core Engine activo", time: new Date() });
 });
 
+// Útil para un cron externo (Render gratis duerme el servicio y el setInterval no corre).
 app.get('/inventario/forzar-alerta', async (req, res) => {
   await ejecutarRevisionCaducidades();
   res.json({ ok: true, mensaje: "Escaneo del guardián forzado manualmente." });
@@ -625,6 +656,21 @@ async function registrarMovimiento({ tipo, codigo, nombre, cantidad, motivo }) {
     hora:     ahora.toLocaleTimeString('es-EC', { hour12: false, timeZone: 'America/Guayaquil' }),
     motivo:   motivo   || "Actualización manual"
   });
+}
+
+// Busca la caja activa (helper)
+async function cajaActiva() {
+  const snap = await db.collection('cajas').where('activa', '==', true).get();
+  return snap.empty ? null : snap.docs[0];
+}
+
+// Suma a la caja de forma atómica (evita perder ingresos con ventas simultáneas)
+async function cajaRegistrar(cajaDoc, { ingresos = 0, gastos = 0, movimiento }) {
+  const upd = {};
+  if (ingresos) upd.ingresos = FieldValue.increment(Number(ingresos));
+  if (gastos)   upd.gastos   = FieldValue.increment(Number(gastos));
+  if (movimiento) upd.movimientos = FieldValue.arrayUnion(movimiento);
+  await cajaDoc.ref.update(upd);
 }
 
 // =========================================================================
@@ -683,8 +729,9 @@ app.put('/productos/agregar/:id', async (req, res) => {
     const doc    = await docRef.get();
     if (!doc.exists) return res.status(404).json({ error: "Documento objetivo inexistente" });
     const p = doc.data();
+    const cantidad = Number(req.body.cantidad);
 
-    const updates = { stock: (p.stock || 0) + Number(req.body.cantidad) };
+    const updates = { stock: FieldValue.increment(cantidad) };
     if (req.body.caducidad !== undefined) updates.caducidad = req.body.caducidad;
 
     await docRef.update(updates);
@@ -693,7 +740,7 @@ app.put('/productos/agregar/:id', async (req, res) => {
       tipo:     "entrada",
       codigo:   p.codigo || "-",
       nombre:   p.nombre || "Sin Nombre",
-      cantidad: Number(req.body.cantidad),
+      cantidad,
       motivo:   req.body.motivo || "Reabastecimiento de bodega"
     });
 
@@ -709,10 +756,13 @@ app.put('/productos/vender/:id', async (req, res) => {
     const doc    = await docRef.get();
     if (!doc.exists) return res.status(404).json({ error: "El producto no existe en el catálogo" });
     const p = doc.data();
-    let nuevoStock = (p.stock || 0) - Number(req.body.cantidad);
+    const cantidad = Number(req.body.cantidad);
+    let nuevoStock = (p.stock || 0) - cantidad;
+    const faltante = nuevoStock < 0 ? Math.abs(nuevoStock) : 0;
     if (nuevoStock < 0) nuevoStock = 0;
     await docRef.update({ stock: nuevoStock });
-    res.json({ ok: true });
+    if (faltante > 0) console.warn(`⚠️ Venta de "${p.nombre}" superó el stock en ${faltante} unidad(es). Stock dejado en 0.`);
+    res.json({ ok: true, stock: nuevoStock, sobreventa: faltante });
   } catch (err) {
     res.status(500).json({ error: "Error de inventario al procesar el descuento posventa" });
   }
@@ -874,7 +924,7 @@ app.post('/correo/factura', async (req, res) => {
   }
 
   try {
-    const htmlFactura = generarHTMLCorreo(datos, carrito, tipoPago);
+    const htmlFactura = generarHTMLCorreo(datos || {}, carrito, tipoPago);
     const subject     = `🧾 Comprobante Digital — ${datos?.cliente || "Cliente"} · Total: $${Number(datos?.totalFinal || 0).toFixed(2)}`;
 
     const resultado = await enviarCorreoBrevo({
@@ -908,7 +958,7 @@ app.post('/correo/abono', async (req, res) => {
   }
 
   try {
-    const html = generarHTMLCorreoAbono(datos);
+    const html = generarHTMLCorreoAbono(datos || {});
     const subject = `💰 Comprobante de Abono — ${datos?.cliente || "Cliente"} · $${Number(datos?.monto || 0).toFixed(2)}`;
 
     const resultado = await enviarCorreoBrevo({
@@ -958,30 +1008,24 @@ app.post('/ventas', async (req, res) => {
       }
     }
 
-    const cajasSnapshot = await db.collection('cajas').where('activa', '==', true).get();
-    if (!cajasSnapshot.empty) {
-      const cajaRef = cajasSnapshot.docs[0].ref;
-      const caja    = cajasSnapshot.docs[0].data();
-
-      if (req.body.tipo === "efectivo" || req.body.tipo === "transferencia") {
-        caja.ingresos = (caja.ingresos || 0) + Number(req.body.total || 0);
-        if (!caja.movimientos) caja.movimientos = [];
-
-        if (req.body.tipo === "efectivo") {
-          caja.movimientos.push({ tipo: "ingreso", monto: req.body.total, motivo: `Venta directa efectivo - Cliente: ${req.body.cliente}`, fecha: new Date().toISOString() });
-        } else {
-          caja.movimientos.push({
-            tipo:        "transferencia",
-            monto:       Number(req.body.total || 0),
-            motivo:      `Liquidación por Transferencia — ${req.body.banco || ""}`,
-            banco:       req.body.banco       || "",
-            cuenta:      req.body.cuenta      || "",
-            comprobante: req.body.comprobante || "",
-            remitente:   req.body.cliente     || "",
-            fecha:       new Date().toISOString()
-          });
-        }
-        await cajaRef.update(caja);
+    if (req.body.tipo === "efectivo" || req.body.tipo === "transferencia") {
+      const caja = await cajaActiva();
+      if (caja) {
+        const totalVenta = Number(req.body.total || 0);
+        const ahora = new Date().toISOString();
+        const movimiento = req.body.tipo === "efectivo"
+          ? { tipo: "ingreso", monto: totalVenta, motivo: `Venta directa efectivo - Cliente: ${req.body.cliente}`, fecha: ahora }
+          : {
+              tipo:        "transferencia",
+              monto:       totalVenta,
+              motivo:      `Liquidación por Transferencia — ${req.body.banco || ""}`,
+              banco:       req.body.banco       || "",
+              cuenta:      req.body.cuenta      || "",
+              comprobante: req.body.comprobante || "",
+              remitente:   req.body.cliente     || "",
+              fecha:       ahora
+            };
+        await cajaRegistrar(caja, { ingresos: totalVenta, movimiento });
       }
     }
 
@@ -1028,7 +1072,6 @@ app.post('/ventas', async (req, res) => {
     }
 
     // 📧 Enviar comprobante de venta automáticamente al correo del cliente
-    // (ya no depende de que el navegador/frontend haga el fetch aparte).
     if (req.body.correo && BREVO_API_KEY) {
       const datosCorreo = {
         cliente:        req.body.cliente,
@@ -1063,6 +1106,7 @@ app.post('/ventas', async (req, res) => {
 
     res.json({ ok: true });
   } catch (err) {
+    console.error("❌ Error al asentar venta:", err.message);
     res.status(500).json({ error: "Fallo del sistema al asentar venta" });
   }
 });
@@ -1075,7 +1119,7 @@ app.delete('/ventas/producto/:ventaId/:indice', async (req, res) => {
 
     const venta  = doc.data();
     const indice = Number(req.params.indice);
-    if (isNaN(indice) || indice < 0 || indice >= venta.productos.length) {
+    if (isNaN(indice) || indice < 0 || indice >= (venta.productos || []).length) {
       return res.status(400).json({ error: "Direccionamiento indexado incorrecto" });
     }
 
@@ -1094,7 +1138,7 @@ app.delete('/ventas/producto/:ventaId/:indice', async (req, res) => {
   }
 });
 
-app.delete('/ventas/dia', async (req, res) => {
+app.delete('/ventas/dia', requiereAdmin, async (req, res) => {
   try {
     const { fecha } = req.body;
     if (!fecha) return res.status(400).json({ error: "Parámetro fecha ausente" });
@@ -1155,67 +1199,54 @@ app.post('/deudas', async (req, res) => {
 app.post('/deudas/pagar', async (req, res) => {
   try {
     const docRef = db.collection('deudas').doc(req.body.id);
-    const doc    = await docRef.get();
-    if (!doc.exists) return res.json({ error: "Cuenta de deuda no localizada" });
-
-    const deuda = doc.data();
-    const monto = Number(req.body.monto);
+    const monto  = Number(req.body.monto);
     if (!monto || monto <= 0) return res.json({ error: "Importe introducido inválido" });
-
-    const restante = deuda.total - deuda.pagado;
-    if (monto > restante) return res.json({ error: "Sobrepago no permitido para el saldo restante" });
 
     const metodoPago  = req.body.tipoPago    || req.body.metodoPago || "efectivo";
     const banco       = req.body.banco       || "";
     const comprobante = req.body.comprobante || "";
     const remitente   = req.body.remitente   || "";
+    const pagoNuevo = { monto, tipoPago: metodoPago, banco, comprobante, remitente, fecha: new Date().toISOString() };
 
-    deuda.pagado += monto;
-    if (!deuda.pagos) deuda.pagos = [];
+    // Transacción: validación de saldo y registro del pago van juntos (sin sobrepagos por doble clic)
+    let deuda;
+    try {
+      deuda = await db.runTransaction(async (t) => {
+        const doc = await t.get(docRef);
+        if (!doc.exists) throw new Error("NO_EXISTE");
+        const d = doc.data();
+        const restante = Number(d.total || 0) - Number(d.pagado || 0);
+        if (monto > restante + 0.005) throw new Error("SOBREPAGO");
+        d.pagado = Number(d.pagado || 0) + monto;
+        d.pagos  = [...(d.pagos || []), pagoNuevo];
+        t.update(docRef, { pagado: d.pagado, pagos: d.pagos });
+        return d;
+      });
+    } catch (e) {
+      if (e.message === "NO_EXISTE") return res.json({ error: "Cuenta de deuda no localizada" });
+      if (e.message === "SOBREPAGO") return res.json({ error: "Sobrepago no permitido para el saldo restante" });
+      throw e;
+    }
 
-    deuda.pagos.push({
-      monto,
-      tipoPago: metodoPago,
-      banco,
-      comprobante,
-      remitente,
-      fecha: new Date().toISOString()
-    });
-
-    await docRef.update(deuda);
-
-    const cajasSnapshot = await db.collection('cajas').where('activa', '==', true).get();
-    if (!cajasSnapshot.empty) {
-      const cajaRef = cajasSnapshot.docs[0].ref;
-      const caja    = cajasSnapshot.docs[0].data();
-
-      caja.ingresos = (caja.ingresos || 0) + monto;
-      if (!caja.movimientos) caja.movimientos = [];
-
-      if (metodoPago === "transferencia") {
-        caja.movimientos.push({
-          tipo:        "transferencia",
-          monto,
-          motivo:      `Abono a Cuenta Diferida — ${deuda.cliente}`,
-          banco,
-          comprobante,
-          remitente:   remitente || deuda.cliente || "",
-          fecha:       new Date().toISOString()
-        });
-      } else {
-        caja.movimientos.push({
-          tipo:   "ingreso",
-          monto,
-          motivo: `Abono Efectivo Deuda — ${deuda.cliente}`,
-          fecha:  new Date().toISOString()
-        });
-      }
-
-      await cajaRef.update(caja);
+    const caja = await cajaActiva();
+    if (caja) {
+      const ahora = new Date().toISOString();
+      const movimiento = metodoPago === "transferencia"
+        ? {
+            tipo:        "transferencia",
+            monto,
+            motivo:      `Abono a Cuenta Diferida — ${deuda.cliente}`,
+            banco,
+            comprobante,
+            remitente:   remitente || deuda.cliente || "",
+            fecha:       ahora
+          }
+        : { tipo: "ingreso", monto, motivo: `Abono Efectivo Deuda — ${deuda.cliente}`, fecha: ahora };
+      await cajaRegistrar(caja, { ingresos: monto, movimiento });
     }
 
     // 📧 Enviar comprobante de abono automáticamente si el cliente tiene correo registrado
-    const restanteFinal = deuda.total - deuda.pagado;
+    const restanteFinal = Number(deuda.total) - Number(deuda.pagado);
 
     if (deuda.correo && BREVO_API_KEY) {
       const htmlAbono = generarHTMLCorreoAbono({
@@ -1252,6 +1283,7 @@ app.post('/deudas/pagar', async (req, res) => {
       productos: deuda.productos || []
     });
   } catch (err) {
+    console.error("❌ Error al asentar amortización:", err.message);
     res.status(500).json({ error: "Fallo crítico al asentar amortización" });
   }
 });
@@ -1267,6 +1299,7 @@ app.put('/deudas/:id', async (req, res) => {
     if (req.body.cedula      !== undefined) deuda.cedula      = req.body.cedula;
     if (req.body.celular     !== undefined) deuda.celular     = req.body.celular;
     if (req.body.direccion   !== undefined) deuda.direccion   = req.body.direccion;
+    if (req.body.correo      !== undefined) deuda.correo      = req.body.correo;
     if (req.body.total       !== undefined) deuda.total       = Number(req.body.total);
     if (req.body.productos   !== undefined) deuda.productos   = req.body.productos;
     if (req.body.pagado      !== undefined) deuda.pagado      = Number(req.body.pagado);
@@ -1293,6 +1326,8 @@ app.delete('/deudas/:id', async (req, res) => {
 // PEDIDOS A PROVEEDORES (PREFORMAS)
 // =========================================================================
 
+const normTxt = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
 app.get('/pedidos', async (req, res) => {
   try {
     const snapshot = await db.collection('pedidos').orderBy('fechaPreforma', 'desc').get();
@@ -1307,17 +1342,22 @@ app.post('/pedidos', async (req, res) => {
   try {
     const productos = Array.isArray(req.body.productos) ? req.body.productos.map(p => ({
       nombre:           p.nombre || "Sin Nombre",
+      productoId:       p.productoId || null,
+      codigo:           p.codigo || "",
       medida:           p.medida || "-",
       cantidadPedida:   Number(p.cantidadPedida || 0),
       precioUnitario:   Number(p.precioUnitario || 0),
       cantidadRecibida: null
     })) : [];
 
+    // El total se recalcula en el servidor (no se confía en el navegador)
+    const totalPreforma = Number(productos.reduce((s, p) => s + p.cantidadPedida * p.precioUnitario, 0).toFixed(2));
+
     const nuevo = {
       quienPide:     req.body.quienPide || "",
-      proveedor:     req.body.proveedor || "Sin especificar",
+      proveedor:     String(req.body.proveedor || "Sin especificar").trim(),
       productos,
-      totalPreforma: Number(req.body.totalPreforma || 0),
+      totalPreforma,
       estado:        "pendiente",
       fechaPreforma: new Date().toISOString(),
       fechaLlegada:  null
@@ -1331,45 +1371,86 @@ app.post('/pedidos', async (req, res) => {
   }
 });
 
+// Busca el producto de Bodega: primero por ID, luego por nombre normalizado
+async function localizarProductoBodega(it, cacheProductos) {
+  if (it.productoId) {
+    const d = await db.collection('productos').doc(it.productoId).get();
+    if (d.exists) return d;
+  }
+  const n = normTxt(it.nombre);
+  return cacheProductos.find(d => normTxt(d.data().nombre) === n) || null;
+}
+
 app.put('/pedidos/recibir/:id', async (req, res) => {
   try {
     const docRef = db.collection('pedidos').doc(req.params.id);
     const doc    = await docRef.get();
     if (!doc.exists) return res.status(404).json({ error: "Pedido no encontrado" });
 
-    const productos = Array.isArray(req.body.productos) ? req.body.productos : doc.data().productos;
-    const estado    = req.body.estado || "incompleto";
+    const previos  = doc.data().productos || [];
+    const enviados = Array.isArray(req.body.productos) ? req.body.productos : previos;
 
-    await docRef.update({
-      productos,
-      estado,
-      fechaLlegada: new Date().toISOString()
-    });
+    const cacheProductos = (await db.collection('productos').get()).docs;
 
-    // Si llegó todo o parte, sumamos el stock recibido a Bodega automáticamente
-    // (comenta este bloque "for" si prefieres actualizar el stock manualmente en Bodega).
-    for (const it of productos) {
-      if (it.cantidadRecibida && it.cantidadRecibida > 0) {
-        const prodSnap = await db.collection('productos').where('nombre', '==', it.nombre).get();
-        if (!prodSnap.empty) {
-          const prodDoc = prodSnap.docs[0];
-          const stockActual = prodDoc.data().stock || 0;
-          await prodDoc.ref.update({ stock: stockActual + Number(it.cantidadRecibida) });
+    const productos = [];
+    const noEncontrados = [];
+
+    for (let i = 0; i < previos.length; i++) {
+      const prev  = previos[i];
+      const nuevo = enviados[i] || prev;
+
+      const yaRecibido = Number(prev.cantidadRecibida || 0);
+      const pedida     = Number(prev.cantidadPedida || 0);
+      // Nunca más de lo pedido ni retroceder lo ya recibido
+      const recibidaTotal = Math.min(pedida, Math.max(yaRecibido, Number(nuevo.cantidadRecibida ?? yaRecibido)));
+      const delta = recibidaTotal - yaRecibido;   // solo se suma lo NUEVO (evita duplicar stock)
+
+      if (delta > 0) {
+        const prodDoc = await localizarProductoBodega(prev, cacheProductos);
+        if (prodDoc) {
+          const upd = { stock: FieldValue.increment(delta) };
+          if (Number(prev.precioUnitario) > 0) upd.precioCompra = Number(prev.precioUnitario);
+          await prodDoc.ref.update(upd);
           await registrarMovimiento({
             tipo:     "entrada",
             codigo:   prodDoc.data().codigo || "-",
-            nombre:   it.nombre,
-            cantidad: Number(it.cantidadRecibida),
-            motivo:   `Llegada de pedido a proveedor`
+            nombre:   prodDoc.data().nombre || prev.nombre,
+            cantidad: delta,
+            motivo:   `Llegada de pedido — ${doc.data().proveedor || "proveedor"}`
           });
+        } else {
+          noEncontrados.push(prev.nombre);
         }
       }
+      productos.push({ ...prev, cantidadRecibida: recibidaTotal });
     }
 
-    res.json({ ok: true });
+    const todoCompleto = productos.every(it => Number(it.cantidadRecibida || 0) >= Number(it.cantidadPedida || 0));
+    const estado = todoCompleto ? "completo" : "incompleto";
+
+    await docRef.update({ productos, estado, fechaLlegada: new Date().toISOString() });
+    res.json({ ok: true, estado, noEncontrados });
   } catch (err) {
     console.error("❌ Error al registrar llegada del pedido:", err.message);
     res.status(500).json({ error: "No se pudo registrar la llegada" });
+  }
+});
+
+app.delete('/pedidos/:id', async (req, res) => {
+  try {
+    const docRef = db.collection('pedidos').doc(req.params.id);
+    const doc    = await docRef.get();
+    if (!doc.exists) return res.status(404).json({ error: "Pedido no encontrado" });
+
+    // Si ya entró mercadería, borrarlo dejaría el stock sin respaldo
+    const yaEntro = (doc.data().productos || []).some(p => Number(p.cantidadRecibida || 0) > 0);
+    if (yaEntro) return res.status(400).json({ error: "Este pedido ya tiene mercadería recibida; no se puede eliminar." });
+
+    await docRef.delete();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("❌ Error al eliminar pedido:", err.message);
+    res.status(500).json({ error: "No se pudo eliminar el pedido" });
   }
 });
 
@@ -1612,19 +1693,17 @@ app.get('/caja', async (req, res) => {
 
 app.post('/caja/gasto', async (req, res) => {
   try {
-    const snapshot = await db.collection('cajas').where('activa', '==', true).get();
-    if (snapshot.empty) return res.json({ error: "Ninguna terminal de caja se encuentra activa" });
+    const caja = await cajaActiva();
+    if (!caja) return res.json({ error: "Ninguna terminal de caja se encuentra activa" });
 
-    const docRef = snapshot.docs[0].ref;
-    const caja   = snapshot.docs[0].data();
     const monto  = Number(req.body.monto || 0);
     const motivo = req.body.motivo || "Gasto misceláneo de caja";
     if (!monto || monto <= 0) return res.json({ error: "Importe inválido" });
 
-    caja.gastos = (caja.gastos || 0) + monto;
-    if (!caja.movimientos) caja.movimientos = [];
-    caja.movimientos.push({ tipo: "gasto", monto, motivo, fecha: new Date().toISOString() });
-    await docRef.update(caja);
+    await cajaRegistrar(caja, {
+      gastos: monto,
+      movimiento: { tipo: "gasto", monto, motivo, fecha: new Date().toISOString() }
+    });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Error de red al consolidar débito" });
@@ -1633,28 +1712,26 @@ app.post('/caja/gasto', async (req, res) => {
 
 app.post('/caja/ingreso', async (req, res) => {
   try {
-    const snapshot = await db.collection('cajas').where('activa', '==', true).get();
-    if (snapshot.empty) return res.json({ error: "Ninguna terminal de caja se encuentra activa" });
+    const caja = await cajaActiva();
+    if (!caja) return res.json({ error: "Ninguna terminal de caja se encuentra activa" });
 
-    const docRef = snapshot.docs[0].ref;
-    const caja   = snapshot.docs[0].data();
     const monto  = Number(req.body.monto || 0);
     const motivo = req.body.motivo || req.body.producto || "Entrada de mercadería";
     if (!monto || monto <= 0) return res.json({ error: "Importe inválido" });
 
-    caja.ingresos = (caja.ingresos || 0) + monto;
-    if (!caja.movimientos) caja.movimientos = [];
-    caja.movimientos.push({
-      tipo:         "ingreso",
-      monto,
-      motivo,
-      producto:     req.body.producto     || motivo,
-      cantidad:     monto,
-      nota:         req.body.nota         || "",
-      horaRegistro: req.body.horaRegistro || new Date().toLocaleTimeString('es-EC'),
-      fecha:        new Date().toISOString()
+    await cajaRegistrar(caja, {
+      ingresos: monto,
+      movimiento: {
+        tipo:         "ingreso",
+        monto,
+        motivo,
+        producto:     req.body.producto     || motivo,
+        cantidad:     monto,
+        nota:         req.body.nota         || "",
+        horaRegistro: req.body.horaRegistro || new Date().toLocaleTimeString('es-EC'),
+        fecha:        new Date().toISOString()
+      }
     });
-    await docRef.update(caja);
 
     await registrarMovimiento({
       tipo:     "entrada",
@@ -1672,27 +1749,25 @@ app.post('/caja/ingreso', async (req, res) => {
 
 app.post('/caja/transferencia', async (req, res) => {
   try {
-    const snapshot = await db.collection('cajas').where('activa', '==', true).get();
-    if (snapshot.empty) return res.json({ error: "La caja se encuentra cerrada" });
+    const caja = await cajaActiva();
+    if (!caja) return res.json({ error: "La caja se encuentra cerrada" });
 
-    const docRef = snapshot.docs[0].ref;
-    const caja   = snapshot.docs[0].data();
-    const monto  = Number(req.body.monto || 0);
+    const monto = Number(req.body.monto || 0);
     if (!monto || monto <= 0) return res.json({ error: "Importe bancario fuera de rango" });
 
-    caja.ingresos = (caja.ingresos || 0) + monto;
-    if (!caja.movimientos) caja.movimientos = [];
-    caja.movimientos.push({
-      tipo:        "transferencia",
-      monto,
-      motivo:      `Ingreso directo por transferencia - ${req.body.banco || ""}`,
-      banco:       req.body.banco       || "",
-      cuenta:      req.body.cuenta      || "",
-      comprobante: req.body.comprobante || "",
-      remitente:   req.body.remitente   || "",
-      fecha:       new Date().toISOString()
+    await cajaRegistrar(caja, {
+      ingresos: monto,
+      movimiento: {
+        tipo:        "transferencia",
+        monto,
+        motivo:      `Ingreso directo por transferencia - ${req.body.banco || ""}`,
+        banco:       req.body.banco       || "",
+        cuenta:      req.body.cuenta      || "",
+        comprobante: req.body.comprobante || "",
+        remitente:   req.body.remitente   || "",
+        fecha:       new Date().toISOString()
+      }
     });
-    await docRef.update(caja);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Fallo de comunicación en asiento bancario" });
@@ -1722,6 +1797,7 @@ app.post('/caja/cerrar', async (req, res) => {
     caja.cierre     = real;
     caja.horaCierre = new Date().toISOString();
     caja.dejado     = dejar;
+    if (!caja.movimientos) caja.movimientos = [];
     caja.movimientos.push({ tipo: "cierre", monto: real, motivo: `Cierre contable de jornada | Fondo retenido: $${dejar}`, fecha: new Date().toISOString() });
     await docRef.update(caja);
 
@@ -1744,11 +1820,15 @@ app.post('/caja/cerrar', async (req, res) => {
 
 app.get('/caja/historial', async (req, res) => {
   try {
+    // Sin orderBy en Firestore: así NO hace falta el índice compuesto (activa + horaCierre).
+    // Se ordena en memoria y se limita a las 50 más recientes.
     const snapshot = await db.collection('cajas')
       .where('activa', '==', false)
-      .orderBy('horaCierre', 'desc')
-      .limit(50)
       .get();
+
+    const cajasCerradas = mapearDocs(snapshot)
+      .sort((a, b) => new Date(b.horaCierre || 0) - new Date(a.horaCierre || 0))
+      .slice(0, 50);
 
     const movInvSnapshot = await db.collection('movimientos-inventario')
       .orderBy('fecha', 'desc')
@@ -1757,7 +1837,7 @@ app.get('/caja/historial', async (req, res) => {
     const todosMovInv = [];
     movInvSnapshot.forEach(doc => todosMovInv.push({ _id: doc.id, ...doc.data() }));
 
-    const historial = mapearDocs(snapshot).map(c => {
+    const historial = cajasCerradas.map(c => {
       let transferencias = 0;
       const gastosLista        = [];
       const transferenciasList = [];
@@ -2034,9 +2114,9 @@ app.put('/cheques-notas/:mes', async (req, res) => {
   }
 });
 
+// Fecha de hoy en zona horaria de Ecuador (Render corre en UTC)
 function hoyISOServidor() {
-  const d = new Date();
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' }); // YYYY-MM-DD
 }
 
 // =========================================================================
