@@ -1405,6 +1405,10 @@ app.put('/pedidos/recibir/:id', async (req, res) => {
       const recibidaTotal = Math.min(pedida, Math.max(yaRecibido, Number(nuevo.cantidadRecibida ?? yaRecibido)));
       const delta = recibidaTotal - yaRecibido;   // solo se suma lo NUEVO (evita duplicar stock)
 
+      // Precio real de la factura (la preforma pudo cambiar al llegar la mercadería)
+      const precioNuevo = Number(nuevo.precioUnitario);
+      if (Number.isFinite(precioNuevo) && precioNuevo >= 0) prev.precioUnitario = Number(precioNuevo.toFixed(4));
+
       if (delta > 0) {
         const prodDoc = await localizarProductoBodega(prev, cacheProductos);
         if (prodDoc) {
@@ -1428,8 +1432,9 @@ app.put('/pedidos/recibir/:id', async (req, res) => {
     const todoCompleto = productos.every(it => Number(it.cantidadRecibida || 0) >= Number(it.cantidadPedida || 0));
     const estado = todoCompleto ? "completo" : "incompleto";
 
-    await docRef.update({ productos, estado, fechaLlegada: new Date().toISOString() });
-    res.json({ ok: true, estado, noEncontrados });
+    const totalPreforma = Number(productos.reduce((t, p) => t + Number(p.cantidadPedida || 0) * Number(p.precioUnitario || 0), 0).toFixed(2));
+    await docRef.update({ productos, estado, totalPreforma, fechaLlegada: new Date().toISOString() });
+    res.json({ ok: true, estado, noEncontrados, totalPreforma });
   } catch (err) {
     console.error("❌ Error al registrar llegada del pedido:", err.message);
     res.status(500).json({ error: "No se pudo registrar la llegada" });
@@ -1443,8 +1448,13 @@ app.delete('/pedidos/:id', async (req, res) => {
     if (!doc.exists) return res.status(404).json({ error: "Pedido no encontrado" });
 
     // Si ya entró mercadería, borrarlo dejaría el stock sin respaldo
-    const yaEntro = (doc.data().productos || []).some(p => Number(p.cantidadRecibida || 0) > 0);
-    if (yaEntro) return res.status(400).json({ error: "Este pedido ya tiene mercadería recibida; no se puede eliminar." });
+    // Se puede eliminar si nada ha llegado o si ya llegó todo (el stock ya quedó en Bodega).
+    // Solo se bloquea un pedido con llegada PARCIAL, para no perder el rastro del faltante.
+    const d = doc.data();
+    const yaEntro = (d.productos || []).some(p => Number(p.cantidadRecibida || 0) > 0);
+    if (yaEntro && d.estado !== "completo") {
+      return res.status(400).json({ error: "Tiene una llegada parcial. Completa la llegada antes de eliminarlo." });
+    }
 
     await docRef.delete();
     res.json({ ok: true });
