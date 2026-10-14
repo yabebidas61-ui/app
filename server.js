@@ -3,6 +3,8 @@ const express = require('express');
 const cors    = require('cors');
 const admin   = require('firebase-admin');
 const multer  = require('multer');
+const fs      = require('fs');
+const path    = require('path');
 const { v2: cloudinary } = require('cloudinary');
 
 const app = express();
@@ -11,7 +13,7 @@ app.use(cors());
 app.use(express.json({ limit: '25mb' }));   // /sri/firma envía el .p12 en base64
 app.use(express.urlencoded({ extended: true }));
 
-// 🔒 No exponer código fuente, .env, package.json, etc. (antes express.static('.') los publicaba)
+// 🔒 No exponer código fuente, .env, package.json, etc.
 app.use((req, res, next) => {
   const p = decodeURIComponent(req.path).toLowerCase();
   if (/\.(js|json|env|md|lock|map|log)$/.test(p) || p.split('/').some(seg => seg.startsWith('.')) || p.includes('node_modules')) {
@@ -19,7 +21,18 @@ app.use((req, res, next) => {
   }
   next();
 });
-app.use(express.static('.'));
+
+// 🔒 Archivos estáticos: si existe la carpeta "public", SOLO se sirve esa carpeta (recomendado).
+// Si todavía no existe, se mantiene el comportamiento anterior para no romper tu sitio,
+// pero se avisa en los logs. Cuando muevas tus HTML/CSS/imágenes a /public, queda seguro.
+const PUBLIC_DIR = path.join(__dirname, 'public');
+if (fs.existsSync(PUBLIC_DIR)) {
+  app.use(express.static(PUBLIC_DIR));
+  console.log("🔒 Sirviendo archivos estáticos solo desde /public");
+} else {
+  console.warn("⚠️ No existe la carpeta /public: se sirve la raíz del proyecto (menos seguro). Mueve tus archivos públicos a /public.");
+  app.use(express.static('.'));
+}
 
 // 🔒 Protección opcional: si defines ADMIN_TOKEN en Render, las rutas sensibles exigen
 // el encabezado  x-admin-token. Si no lo defines, todo funciona como antes.
@@ -1447,7 +1460,6 @@ app.delete('/pedidos/:id', async (req, res) => {
     const doc    = await docRef.get();
     if (!doc.exists) return res.status(404).json({ error: "Pedido no encontrado" });
 
-    // Si ya entró mercadería, borrarlo dejaría el stock sin respaldo
     // Se puede eliminar si nada ha llegado o si ya llegó todo (el stock ya quedó en Bodega).
     // Solo se bloquea un pedido con llegada PARCIAL, para no perder el rastro del faltante.
     const d = doc.data();
@@ -1939,6 +1951,15 @@ app.get('/caja/historial', async (req, res) => {
 // ANÁLISIS
 // =========================================================================
 
+// Convierte cualquier formato de fecha (string ISO, Timestamp de Firestore, Date) a string ISO
+const aFechaISO = (f) => {
+  if (!f) return null;
+  if (typeof f === 'string') return f;
+  if (typeof f.toDate === 'function') return f.toDate().toISOString();
+  if (f instanceof Date) return f.toISOString();
+  return String(f);
+};
+
 app.get('/analisis', async (req, res) => {
   try {
     const snapshot = await db.collection('ventas').get();
@@ -1948,6 +1969,8 @@ app.get('/analisis', async (req, res) => {
     const productos = {}, porDia = {}, porMes = {};
 
     ventas.forEach(v => {
+      if (!v || typeof v !== 'object') return;
+
       const total = Number(v.total || 0);
       totalGeneral += total;
       if (v.tipo === "efectivo")      efectivo++;
@@ -1955,15 +1978,20 @@ app.get('/analisis', async (req, res) => {
       if (v.tipo === "transferencia") transferencia++;
 
       let dia = "Desconocido", mes = "Desconocido";
-      try { if (v.fecha) { dia = v.fecha.split("T")[0]; mes = v.fecha.slice(0, 7); } } catch (_) {}
+      try {
+        const fechaISO = aFechaISO(v.fecha);
+        if (fechaISO) { dia = fechaISO.split("T")[0]; mes = fechaISO.slice(0, 7); }
+      } catch (_) {}
 
       porDia[dia] = (porDia[dia] || 0) + total;
       porMes[mes] = (porMes[mes] || 0) + total;
 
       if (Array.isArray(v.productos)) {
         v.productos.forEach(p => {
+          if (!p || typeof p !== 'object') return;   // ignora elementos nulos o inválidos
+
           const nombre   = p.nombre   || "Sin nombre";
-          const cantidad = Number(p.amount || p.cantidad || 1);
+          const cantidad = Number(p.amount ?? p.cantidad ?? 1) || 0;
           const precio   = Number(p.precio   || 0);
           const costo    = Number(p.precioCosto || p.costo || 0);
           const ganancia = (precio - costo) * cantidad;
@@ -1984,7 +2012,9 @@ app.get('/analisis', async (req, res) => {
 
     res.json({ ventas, totalGeneral, efectivo, credito, transferencia, clientes: clientesUnicos, porDia, porMes, masVendidos, menosVendidos, masGanancia, menosGanancia });
   } catch (err) {
-    res.status(500).json({ error: "Fallo al procesar métricas gerenciales de auditoría" });
+    // 🔍 Registra el error REAL en los logs de Render (no se envía al navegador)
+    console.error('ERROR REAL EN GET /analisis:', err);
+    return res.status(500).json({ error: 'Fallo al procesar las métricas de ventas' });
   }
 });
 
